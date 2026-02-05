@@ -17,19 +17,23 @@ final class ActivityViewModel: ObservableObject {
     @Published var isSuggestingEvents: Set<String> = []
     @Published var categorySuggestions: [String] = []
     @Published var isSuggestingCategories: Bool = false
+    @Published var weeklyRecap: WeeklyRecap? = nil
 
     private let database: ActivityDatabase
     private let dataStore: LocalDataStore
     private let aiService: AICategoryServiceType
+    private let calendarService: CalendarService
 
     init(
         database: ActivityDatabase = ActivityDatabase(),
         dataStore: LocalDataStore,
-        aiService: AICategoryServiceType = AICategoryService()
+        aiService: AICategoryServiceType = AICategoryService(),
+        calendarService: CalendarService = .shared
     ) {
         self.database = database
         self.dataStore = dataStore
         self.aiService = aiService
+        self.calendarService = calendarService
         aiAvailability = aiService.availability
     }
 
@@ -42,17 +46,34 @@ final class ActivityViewModel: ObservableObject {
     func loadEvents() async {
         isLoading = true
         defer { isLoading = false }
+        if dataStore.preferences.privateModeEnabled {
+            await MainActor.run {
+                events = []
+                errorMessage = "Private mode is enabled. Activity tracking is paused."
+                showingOnboarding = false
+                lastRefresh = Date()
+            }
+            return
+        }
         do {
-            let rawEvents: [ActivityEvent]
+            var rawEvents: [ActivityEvent]
             if rangeEnabled {
                 let normalized = normalizedRange()
                 rawEvents = try database.fetchEvents(from: normalized.start, to: normalized.end)
             } else {
                 rawEvents = try database.fetchEvents(for: selectedDate)
             }
+            if dataStore.preferences.calendarIntegrationEnabled {
+                let calendarEvents = try calendarActivityEvents(
+                    from: rangeEnabled ? normalizedRange().start : selectedDate,
+                    to: rangeEnabled ? normalizedRange().end : selectedDate
+                )
+                rawEvents.append(contentsOf: calendarEvents)
+            }
             errorMessage = nil
             showingOnboarding = false
-            let withIdle = insertIdleEvents(into: rawEvents)
+            let filtered = rawEvents.filter { !dataStore.isExcluded(appName: $0.appName) }
+            let withIdle = insertIdleEvents(into: filtered)
             events = dataStore.applyCategories(to: withIdle)
             pruneSuggestions()
             lastRefresh = Date()
@@ -113,7 +134,8 @@ final class ActivityViewModel: ObservableObject {
                     endTime: next.startTime,
                     duration: gap,
                     categoryId: nil,
-                    isIdle: true
+                    isIdle: true,
+                    source: .idle
                 )
                 output.append(idleEvent)
             }
@@ -190,10 +212,101 @@ final class ActivityViewModel: ObservableObject {
         aiAvailability = aiService.availability
     }
 
+    func loadWeeklyRecap(referenceDate: Date = Date()) async {
+        do {
+            let calendar = Calendar.current
+            let startOfWeek = calendar.dateInterval(of: .weekOfYear, for: referenceDate)?.start ?? calendar.startOfDay(for: referenceDate)
+            guard let endOfWeek = calendar.date(byAdding: .day, value: 6, to: startOfWeek) else { return }
+            guard let previousStart = calendar.date(byAdding: .day, value: -7, to: startOfWeek),
+                  let previousEnd = calendar.date(byAdding: .day, value: -1, to: startOfWeek) else { return }
+
+            var currentRaw = try database.fetchEvents(from: startOfWeek, to: endOfWeek)
+            var previousRaw = try database.fetchEvents(from: previousStart, to: previousEnd)
+            if dataStore.preferences.calendarIntegrationEnabled {
+                currentRaw.append(contentsOf: try calendarActivityEvents(from: startOfWeek, to: endOfWeek))
+                previousRaw.append(contentsOf: try calendarActivityEvents(from: previousStart, to: previousEnd))
+            }
+            let current = dataStore.applyCategories(to: currentRaw.filter { !$0.isIdle && !dataStore.isExcluded(appName: $0.appName) })
+            let previous = dataStore.applyCategories(to: previousRaw.filter { !$0.isIdle && !dataStore.isExcluded(appName: $0.appName) })
+
+            let currentTotals = aggregateByCategory(events: current)
+            let previousTotals = aggregateByCategory(events: previous)
+            let recap = WeeklyRecap(
+                startDate: startOfWeek,
+                endDate: endOfWeek,
+                topCategories: topCategories(from: currentTotals),
+                deltaMinutes: currentTotals.totalMinutes - previousTotals.totalMinutes
+            )
+            await MainActor.run {
+                weeklyRecap = recap
+            }
+        } catch {
+            await MainActor.run {
+                weeklyRecap = nil
+            }
+        }
+    }
+
     private func pruneSuggestions() {
         let keys = Set(events.map { $0.eventKey })
         suggestions = suggestions.filter { keys.contains($0.key) }
         suggestionErrors = suggestionErrors.filter { keys.contains($0.key) }
         isSuggestingEvents = Set(isSuggestingEvents.filter { keys.contains($0) })
     }
+
+    private func calendarActivityEvents(from startDate: Date, to endDate: Date) throws -> [ActivityEvent] {
+        guard calendarService.hasAccess else { return [] }
+        let startOfDay = Calendar.current.startOfDay(for: startDate)
+        let endOfDay = Calendar.current.startOfDay(for: endDate)
+        guard let endInclusive = Calendar.current.date(byAdding: .day, value: 1, to: endOfDay) else {
+            return []
+        }
+        let meetingsCategoryId = dataStore.addCategoryIfNeeded(name: "Meetings", color: .orange)
+        let events = try calendarService.fetchEvents(from: startOfDay, to: endInclusive)
+        return events.map { event in
+            let title = event.title?.trimmingCharacters(in: .whitespacesAndNewlines)
+            let name = title?.isEmpty == false ? "Meeting — \(title!)" : "Meeting"
+            let key = ActivityEventKey.make(appName: name, startTime: event.startDate, endTime: event.endDate)
+            return ActivityEvent(
+                id: UUID(),
+                eventKey: key,
+                appName: name,
+                startTime: event.startDate,
+                endTime: event.endDate,
+                duration: event.endDate.timeIntervalSince(event.startDate),
+                categoryId: meetingsCategoryId,
+                isIdle: false,
+                source: .calendar
+            )
+        }
+    }
+
+    private func aggregateByCategory(events: [ActivityEvent]) -> CategoryTotals {
+        var totals: [UUID?: TimeInterval] = [:]
+        for event in events {
+            totals[event.categoryId, default: 0] += event.duration
+        }
+        let totalMinutes = Int(totals.values.reduce(0, +) / 60)
+        return CategoryTotals(totals: totals, totalMinutes: totalMinutes)
+    }
+
+    private func topCategories(from totals: CategoryTotals, limit: Int = 3) -> [(UUID?, Int)] {
+        totals.totals
+            .map { ($0.key, Int($0.value / 60)) }
+            .sorted { $0.1 > $1.1 }
+            .prefix(limit)
+            .map { $0 }
+    }
+}
+
+struct WeeklyRecap: Equatable {
+    let startDate: Date
+    let endDate: Date
+    let topCategories: [(UUID?, Int)]
+    let deltaMinutes: Int
+}
+
+private struct CategoryTotals {
+    let totals: [UUID?: TimeInterval]
+    let totalMinutes: Int
 }

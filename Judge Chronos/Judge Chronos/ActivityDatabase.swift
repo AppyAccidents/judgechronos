@@ -60,7 +60,8 @@ final class ActivityDatabase {
                     endTime: endDate,
                     duration: duration,
                     categoryId: nil,
-                    isIdle: false
+                    isIdle: false,
+                    source: .appUsage
                 ))
             }
             return events

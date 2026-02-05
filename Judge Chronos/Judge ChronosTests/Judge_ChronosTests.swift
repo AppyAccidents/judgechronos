@@ -26,7 +26,8 @@ struct Judge_ChronosTests {
             endTime: start.addingTimeInterval(60),
             duration: 60,
             categoryId: nil,
-            isIdle: false
+            isIdle: false,
+            source: .appUsage
         )
         let second = ActivityEvent(
             id: UUID(),
@@ -36,7 +37,8 @@ struct Judge_ChronosTests {
             endTime: start.addingTimeInterval(900),
             duration: 300,
             categoryId: nil,
-            isIdle: false
+            isIdle: false,
+            source: .appUsage
         )
         let output = viewModel.insertIdleEvents(into: [first, second])
         #expect(output.count == 3)
@@ -56,7 +58,8 @@ struct Judge_ChronosTests {
             endTime: start.addingTimeInterval(60),
             duration: 60,
             categoryId: nil,
-            isIdle: false
+            isIdle: false,
+            source: .appUsage
         )
         viewModel.suggestions[event.eventKey] = AISuggestion(category: "Focus", rationale: nil)
         viewModel.applySuggestion(for: event)

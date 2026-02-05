@@ -34,8 +34,23 @@ enum SidebarItem: String, CaseIterable, Identifiable {
     }
 }
 
+struct ActivityGroupKey: Hashable {
+    let appName: String
+    let windowTitle: String?
+
+    var displayName: String {
+        if let windowTitle, !windowTitle.isEmpty {
+            return "\(appName) — \(windowTitle)"
+        }
+        return appName
+    }
+}
+
 struct ContentView: View {
     @State private var selection: SidebarItem? = .timeline
+    @EnvironmentObject private var dataStore: LocalDataStore
+    @EnvironmentObject private var viewModel: ActivityViewModel
+    @State private var showingOnboardingFlow: Bool = false
 
     var body: some View {
         NavigationSplitView {
@@ -59,23 +74,49 @@ struct ContentView: View {
             }
         }
         .frame(minWidth: 980, minHeight: 640)
+        .sheet(isPresented: $showingOnboardingFlow) {
+            OnboardingFlowView(isPresented: $showingOnboardingFlow)
+                .environmentObject(dataStore)
+        }
+        .onAppear {
+            if !dataStore.preferences.hasCompletedOnboarding {
+                showingOnboardingFlow = true
+            }
+        }
     }
 }
 
 struct TimelineView: View {
     @EnvironmentObject private var viewModel: ActivityViewModel
     @EnvironmentObject private var dataStore: LocalDataStore
+    @State private var searchText: String = ""
+    @State private var showingDailyReview: Bool = false
+    @State private var showingFocusSession: Bool = false
+
+    private var filteredEvents: [ActivityEvent] {
+        let trimmed = searchText.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !trimmed.isEmpty else { return viewModel.events }
+        let query = trimmed.lowercased()
+        return viewModel.events.filter { event in
+            let categoryName = dataStore.categoryName(for: event.categoryId).lowercased()
+            let app = event.appName.lowercased()
+            let title = event.windowTitle?.lowercased() ?? ""
+            return app.contains(query) || categoryName.contains(query) || title.contains(query)
+        }
+    }
 
     private var groupedByDay: [(Date, [ActivityEvent])] {
-        let grouped = Dictionary(grouping: viewModel.events) { event in
+        let grouped = Dictionary(grouping: filteredEvents) { event in
             Calendar.current.startOfDay(for: event.startTime)
         }
         return grouped.map { (key: $0.key, value: $0.value.sorted { $0.startTime < $1.startTime }) }
             .sorted { $0.0 < $1.0 }
     }
 
-    private func groupedByApp(_ events: [ActivityEvent]) -> [(String, [ActivityEvent])] {
-        let grouped = Dictionary(grouping: events) { $0.appName }
+    private func groupedByTask(_ events: [ActivityEvent]) -> [(ActivityGroupKey, [ActivityEvent])] {
+        let grouped = Dictionary(grouping: events) { event in
+            ActivityGroupKey(appName: event.appDisplayName, windowTitle: event.windowTitle)
+        }
         return grouped.map { (key: $0.key, value: $0.value) }
             .sorted { lhs, rhs in
                 let lhsStart = lhs.value.first?.startTime ?? .distantPast
@@ -88,10 +129,15 @@ struct TimelineView: View {
         VStack(alignment: .leading, spacing: 12) {
             StatusHeaderView()
 
+            if dataStore.preferences.privateModeEnabled {
+                PrivateModeBannerView()
+            }
+
             if viewModel.showingOnboarding {
                 OnboardingCardView()
             }
 
+            searchBar
             dateRangePicker
 
             if case .unavailable(let message) = viewModel.aiAvailability {
@@ -114,9 +160,9 @@ struct TimelineView: View {
                 List {
                     ForEach(groupedByDay, id: \.0) { day, eventsForDay in
                         Section(header: dayHeader(for: day)) {
-                            ForEach(groupedByApp(eventsForDay), id: \.0) { appName, events in
+                            ForEach(groupedByTask(eventsForDay), id: \.0) { groupKey, events in
                                 VStack(alignment: .leading, spacing: 6) {
-                                    sectionHeader(for: appName, events: events)
+                                    sectionHeader(for: groupKey, events: events)
                                     ForEach(events) { event in
                                         TimelineRow(event: event)
                                     }
@@ -134,6 +180,13 @@ struct TimelineView: View {
                 Button("Refresh") {
                     viewModel.refresh()
                 }
+                Button("Daily Review") {
+                    showingDailyReview = true
+                }
+                .disabled(viewModel.events.isEmpty || viewModel.rangeEnabled)
+                Button("Focus Session") {
+                    showingFocusSession = true
+                }
                 Button("Export CSV") {
                     exportCSV()
                 }
@@ -150,6 +203,29 @@ struct TimelineView: View {
         }
         .onReceive(dataStore.objectWillChange) { _ in
             viewModel.reapplyCategories()
+        }
+        .sheet(isPresented: $showingDailyReview) {
+            DailyReviewView(events: viewModel.events, isPresented: $showingDailyReview)
+                .environmentObject(dataStore)
+                .environmentObject(viewModel)
+        }
+        .sheet(isPresented: $showingFocusSession) {
+            FocusSessionView(isPresented: $showingFocusSession)
+                .environmentObject(dataStore)
+        }
+    }
+
+    private var searchBar: some View {
+        HStack {
+            TextField("Search app, category, keyword", text: $searchText)
+                .textFieldStyle(.roundedBorder)
+                .frame(maxWidth: 360)
+            if !searchText.isEmpty {
+                Button("Clear") {
+                    searchText = ""
+                }
+            }
+            Spacer()
         }
     }
 
@@ -188,10 +264,10 @@ struct TimelineView: View {
         return false
     }
 
-    private func sectionHeader(for appName: String, events: [ActivityEvent]) -> some View {
+    private func sectionHeader(for groupKey: ActivityGroupKey, events: [ActivityEvent]) -> some View {
         let total = events.reduce(0) { $0 + $1.duration }
         return HStack {
-            Text(appName)
+            Text(groupKey.displayName)
                 .font(.headline)
             Spacer()
             Text(Formatting.formatDuration(total))
@@ -235,12 +311,18 @@ struct TimelineView: View {
 
 struct StatusHeaderView: View {
     @EnvironmentObject private var viewModel: ActivityViewModel
+    @EnvironmentObject private var dataStore: LocalDataStore
 
     var body: some View {
         HStack(spacing: 12) {
             Label(statusText, systemImage: statusIcon)
                 .font(.subheadline)
                 .foregroundColor(statusColor)
+            if let session = dataStore.activeFocusSession() {
+                Text("Focus: \(dataStore.categoryName(for: session.categoryId)) until \(Formatting.formatTime(session.endTime))")
+                    .font(.subheadline)
+                    .foregroundColor(.secondary)
+            }
             if let lastRefresh = viewModel.lastRefresh {
                 Text("Last refresh: \(Formatting.formatTime(lastRefresh))")
                     .font(.subheadline)
@@ -252,6 +334,9 @@ struct StatusHeaderView: View {
     }
 
     private var statusText: String {
+        if dataStore.preferences.privateModeEnabled {
+            return "Private mode enabled"
+        }
         if viewModel.showingOnboarding {
             return "Needs Full Disk Access"
         }
@@ -262,6 +347,9 @@ struct StatusHeaderView: View {
     }
 
     private var statusIcon: String {
+        if dataStore.preferences.privateModeEnabled {
+            return "eye.slash"
+        }
         if viewModel.showingOnboarding {
             return "exclamationmark.triangle"
         }
@@ -272,9 +360,25 @@ struct StatusHeaderView: View {
     }
 
     private var statusColor: Color {
+        if dataStore.preferences.privateModeEnabled { return .orange }
         if viewModel.showingOnboarding { return .orange }
         if viewModel.errorMessage != nil { return .red }
         return .green
+    }
+}
+
+struct PrivateModeBannerView: View {
+    var body: some View {
+        HStack {
+            Image(systemName: "eye.slash")
+            Text("Private mode is on. Activity tracking and reports are paused.")
+            Spacer()
+        }
+        .font(.subheadline)
+        .foregroundColor(.secondary)
+        .padding(10)
+        .background(Color.orange.opacity(0.12))
+        .cornerRadius(8)
     }
 }
 
@@ -309,6 +413,177 @@ struct OnboardingCardView: View {
     }
 }
 
+struct OnboardingFlowView: View {
+    @EnvironmentObject private var dataStore: LocalDataStore
+    @Binding var isPresented: Bool
+    @State private var step: Int = 0
+    @State private var workStart: Date = Date()
+    @State private var workEnd: Date = Date()
+    @State private var enablePrivateMode: Bool = false
+    @State private var exclusionPattern: String = ""
+    @State private var selectedCategories: Set<String> = []
+    @State private var didLoad: Bool = false
+
+    private let suggestedCategories = [
+        "Deep Work",
+        "Meetings",
+        "Communication",
+        "Research",
+        "Admin",
+        "Social",
+        "Break"
+    ]
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 16) {
+            Text("Welcome to Judge Chronos")
+                .font(.title2)
+            Text("Let’s set up your day so tracking feels effortless.")
+                .foregroundColor(.secondary)
+
+            TabView(selection: $step) {
+                workHoursStep
+                    .tag(0)
+                privacyStep
+                    .tag(1)
+                categoriesStep
+                    .tag(2)
+            }
+            .tabViewStyle(.page)
+
+            HStack {
+                Button("Back") {
+                    step = max(0, step - 1)
+                }
+                .disabled(step == 0)
+
+                Spacer()
+
+                if step < 2 {
+                    Button("Next") {
+                        step = min(2, step + 1)
+                    }
+                } else {
+                    Button("Finish") {
+                        completeOnboarding()
+                        isPresented = false
+                    }
+                    .keyboardShortcut(.defaultAction)
+                }
+            }
+        }
+        .padding(24)
+        .frame(width: 520, height: 420)
+        .onAppear {
+            if !didLoad {
+                loadDefaults()
+                didLoad = true
+            }
+        }
+    }
+
+    private var workHoursStep: some View {
+        VStack(alignment: .leading, spacing: 12) {
+            Text("1. Work hours")
+                .font(.headline)
+            Text("Set your typical working hours.")
+                .foregroundColor(.secondary)
+
+            HStack(spacing: 16) {
+                DatePicker("Start", selection: $workStart, displayedComponents: .hourAndMinute)
+                DatePicker("End", selection: $workEnd, displayedComponents: .hourAndMinute)
+            }
+        }
+        .padding(.top, 8)
+    }
+
+    private var privacyStep: some View {
+        VStack(alignment: .leading, spacing: 12) {
+            Text("2. Privacy")
+                .font(.headline)
+            Text("Control what is tracked and when.")
+                .foregroundColor(.secondary)
+
+            Toggle("Enable Private Mode (pause tracking)", isOn: $enablePrivateMode)
+
+            HStack {
+                TextField("Exclude apps containing…", text: $exclusionPattern)
+                Button("Add") {
+                    dataStore.addExclusion(pattern: exclusionPattern)
+                    exclusionPattern = ""
+                }
+                .disabled(exclusionPattern.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty)
+            }
+
+            if !dataStore.exclusions.isEmpty {
+                Text("Current exclusions: \(dataStore.exclusions.map { $0.pattern }.joined(separator: ", "))")
+                    .font(.footnote)
+                    .foregroundColor(.secondary)
+            }
+        }
+        .padding(.top, 8)
+    }
+
+    private var categoriesStep: some View {
+        VStack(alignment: .leading, spacing: 12) {
+            Text("3. Starter categories")
+                .font(.headline)
+            Text("Pick a few categories to get going.")
+                .foregroundColor(.secondary)
+
+            ForEach(suggestedCategories, id: \.self) { name in
+                Toggle(name, isOn: Binding(
+                    get: { selectedCategories.contains(name) },
+                    set: { isSelected in
+                        if isSelected {
+                            selectedCategories.insert(name)
+                        } else {
+                            selectedCategories.remove(name)
+                        }
+                    }
+                ))
+            }
+        }
+        .padding(.top, 8)
+    }
+
+    private func loadDefaults() {
+        let prefs = dataStore.preferences
+        workStart = dateForTime(prefs.workDayStart)
+        workEnd = dateForTime(prefs.workDayEnd)
+        enablePrivateMode = prefs.privateModeEnabled
+        selectedCategories = Set(suggestedCategories.prefix(4))
+    }
+
+    private func completeOnboarding() {
+        let formatter = timeFormatter()
+        let startString = formatter.string(from: workStart)
+        let endString = formatter.string(from: workEnd)
+        dataStore.updatePreferences { prefs in
+            prefs.workDayStart = startString
+            prefs.workDayEnd = endString
+            prefs.privateModeEnabled = enablePrivateMode
+            prefs.hasCompletedOnboarding = true
+        }
+        for name in selectedCategories {
+            _ = dataStore.addCategoryIfNeeded(name: name, color: .blue)
+        }
+    }
+
+    private func dateForTime(_ value: String) -> Date {
+        let parts = value.split(separator: ":")
+        let hour = Int(parts.first ?? "9") ?? 9
+        let minute = Int(parts.dropFirst().first ?? "0") ?? 0
+        return Calendar.current.date(bySettingHour: hour, minute: minute, second: 0, of: Date()) ?? Date()
+    }
+
+    private func timeFormatter() -> DateFormatter {
+        let formatter = DateFormatter()
+        formatter.dateFormat = "HH:mm"
+        return formatter
+    }
+}
+
 struct TimelineRow: View {
     @EnvironmentObject private var viewModel: ActivityViewModel
     @EnvironmentObject private var dataStore: LocalDataStore
@@ -321,6 +596,12 @@ struct TimelineRow: View {
                 Text("Start: \(Formatting.formatTime(event.startTime))")
                 Spacer()
                 Text("Duration: \(Formatting.formatDuration(event.duration))")
+                    .foregroundColor(.secondary)
+            }
+
+            if let windowTitle = event.windowTitle {
+                Text("Window: \(windowTitle)")
+                    .font(.footnote)
                     .foregroundColor(.secondary)
             }
 
@@ -415,6 +696,130 @@ struct EmptyStateView: View {
             Text("If you just granted Full Disk Access, press Refresh. Otherwise, your Mac may not have recorded app usage yet.")
                 .foregroundColor(.secondary)
         }
+    }
+}
+
+struct DailyReviewView: View {
+    @EnvironmentObject private var dataStore: LocalDataStore
+    @EnvironmentObject private var viewModel: ActivityViewModel
+    @State private var showOnlyUncategorized: Bool = true
+    @Binding var isPresented: Bool
+
+    let events: [ActivityEvent]
+
+    private var reviewEvents: [ActivityEvent] {
+        events.filter { event in
+            guard !event.isIdle else { return false }
+            if showOnlyUncategorized {
+                return event.categoryId == nil
+            }
+            return true
+        }
+    }
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 12) {
+            HStack {
+                Text("Daily Review")
+                    .font(.title2)
+                Spacer()
+                Button("Done") {
+                    isPresented = false
+                }
+            }
+
+            Toggle("Show only uncategorized", isOn: $showOnlyUncategorized)
+
+            if reviewEvents.isEmpty {
+                Text("All caught up for this day.")
+                    .foregroundColor(.secondary)
+            } else {
+                List(reviewEvents) { event in
+                    HStack {
+                        VStack(alignment: .leading, spacing: 4) {
+                            Text(event.appDisplayName)
+                            Text("\(Formatting.formatTime(event.startTime)) • \(Formatting.formatDuration(event.duration))")
+                                .font(.footnote)
+                                .foregroundColor(.secondary)
+                        }
+                        Spacer()
+                        Picker("Category", selection: assignmentBinding(for: event)) {
+                            Text("Uncategorized").tag(UUID?.none)
+                            ForEach(dataStore.categories) { category in
+                                Text(category.name).tag(Optional(category.id))
+                            }
+                        }
+                        .pickerStyle(.menu)
+                        .frame(width: 220)
+                    }
+                }
+            }
+        }
+        .padding(20)
+        .frame(width: 560, height: 420)
+    }
+
+    private func assignmentBinding(for event: ActivityEvent) -> Binding<UUID?> {
+        Binding(
+            get: { dataStore.assignmentForEvent(event) },
+            set: { newValue in
+                viewModel.updateCategory(for: event, categoryId: newValue)
+            }
+        )
+    }
+}
+
+struct FocusSessionView: View {
+    @EnvironmentObject private var dataStore: LocalDataStore
+    @Binding var isPresented: Bool
+    @State private var selectedCategoryId: UUID? = nil
+    @State private var duration: Int = 25
+
+    private let durations = [25, 50, 90]
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 16) {
+            HStack {
+                Text("Focus Session")
+                    .font(.title2)
+                Spacer()
+                Button("Close") {
+                    isPresented = false
+                }
+            }
+
+            if let session = dataStore.activeFocusSession() {
+                Text("Active session: \(dataStore.categoryName(for: session.categoryId))")
+                Text("Ends at \(Formatting.formatTime(session.endTime))")
+                    .foregroundColor(.secondary)
+                Button("End Session Now") {
+                    dataStore.endActiveFocusSession()
+                }
+            } else {
+                Picker("Category", selection: $selectedCategoryId) {
+                    Text("Select category").tag(UUID?.none)
+                    ForEach(dataStore.categories) { category in
+                        Text(category.name).tag(Optional(category.id))
+                    }
+                }
+
+                Picker("Duration", selection: $duration) {
+                    ForEach(durations, id: \.self) { minutes in
+                        Text("\(minutes) minutes").tag(minutes)
+                    }
+                }
+                .pickerStyle(.segmented)
+
+                Button("Start Focus Session") {
+                    guard let categoryId = selectedCategoryId else { return }
+                    dataStore.startFocusSession(durationMinutes: duration, categoryId: categoryId)
+                    isPresented = false
+                }
+                .disabled(selectedCategoryId == nil)
+            }
+        }
+        .padding(20)
+        .frame(width: 420, height: 280)
     }
 }
 
@@ -580,6 +985,7 @@ struct ReportsView: View {
     @EnvironmentObject private var viewModel: ActivityViewModel
     @EnvironmentObject private var dataStore: LocalDataStore
     @State private var exportStatus: String? = nil
+    @State private var isLoadingWeeklyRecap: Bool = false
 
     private var totals: [(String, Double, Color)] {
         let grouped = Dictionary(grouping: viewModel.events) { event in
@@ -599,6 +1005,10 @@ struct ReportsView: View {
                 .foregroundColor(.secondary)
 
             dateRangePicker
+
+            weeklyRecapSection
+
+            goalsProgressSection
 
             if totals.isEmpty {
                 EmptyStateView()
@@ -630,6 +1040,9 @@ struct ReportsView: View {
             HStack {
                 Button("Export CSV") {
                     exportCSV()
+                }
+                Button("Export JSON") {
+                    exportJSON()
                 }
                 if let exportStatus {
                     Text(exportStatus)
@@ -687,6 +1100,23 @@ struct ReportsView: View {
         }
     }
 
+    private func exportJSON() {
+        let panel = NSSavePanel()
+        panel.allowedContentTypes = [.json]
+        panel.nameFieldStringValue = "judge-chronos-\(formattedDateForFilename()).json"
+        panel.canCreateDirectories = true
+        panel.begin { result in
+            guard result == .OK, let url = panel.url else { return }
+            do {
+                let payload = JSONExporter.export(events: viewModel.events, dataStore: dataStore)
+                try payload.write(to: url, atomically: true, encoding: .utf8)
+                exportStatus = "Exported to \(url.lastPathComponent)"
+            } catch {
+                exportStatus = "Export failed: \(error.localizedDescription)"
+            }
+        }
+    }
+
     private func formattedDateForFilename() -> String {
         let formatter = DateFormatter()
         formatter.dateFormat = "yyyy-MM-dd"
@@ -708,10 +1138,80 @@ struct ReportsView: View {
         }
         return "Daily totals for \(viewModel.selectedDate.formatted(date: .abbreviated, time: .omitted))."
     }
+
+    private var weeklyRecapSection: some View {
+        GroupBox("Weekly Recap") {
+            VStack(alignment: .leading, spacing: 8) {
+                if !dataStore.preferences.weeklyRecapEnabled {
+                    Text("Weekly recap is disabled in Settings.")
+                        .foregroundColor(.secondary)
+                } else if let recap = viewModel.weeklyRecap {
+                    let start = recap.startDate.formatted(date: .abbreviated, time: .omitted)
+                    let end = recap.endDate.formatted(date: .abbreviated, time: .omitted)
+                    Text("Week of \(start) – \(end)")
+                        .font(.subheadline)
+                    ForEach(Array(recap.topCategories.enumerated()), id: \.offset) { _, entry in
+                        HStack {
+                            Text(dataStore.categoryName(for: entry.0))
+                            Spacer()
+                            Text("\(entry.1) min")
+                                .foregroundColor(.secondary)
+                        }
+                    }
+                    Text("Change vs last week: \(recap.deltaMinutes) min")
+                        .font(.footnote)
+                        .foregroundColor(.secondary)
+                } else {
+                    Text("Generate a quick summary of this week’s activity.")
+                        .foregroundColor(.secondary)
+                }
+
+                HStack {
+                    Button(isLoadingWeeklyRecap ? "Loading..." : "Generate Weekly Recap") {
+                        isLoadingWeeklyRecap = true
+                        Task {
+                            await viewModel.loadWeeklyRecap()
+                            await MainActor.run { isLoadingWeeklyRecap = false }
+                        }
+                    }
+                    .disabled(isLoadingWeeklyRecap || !dataStore.preferences.weeklyRecapEnabled)
+                    Spacer()
+                }
+            }
+            .frame(maxWidth: .infinity, alignment: .leading)
+        }
+    }
+
+    private var goalsProgressSection: some View {
+        GroupBox("Goals") {
+            VStack(alignment: .leading, spacing: 8) {
+                if dataStore.goals.isEmpty {
+                    Text("No goals yet. Add one in Settings.")
+                        .foregroundColor(.secondary)
+                } else {
+                    ForEach(dataStore.goals) { goal in
+                        let spent = Int(viewModel.events.filter { $0.categoryId == goal.categoryId }.reduce(0) { $0 + $1.duration } / 60)
+                        let name = dataStore.categoryName(for: goal.categoryId)
+                        HStack {
+                            Text(name)
+                            Spacer()
+                            Text("\(spent) / \(goal.minutesPerDay) min")
+                                .foregroundColor(.secondary)
+                        }
+                    }
+                }
+            }
+            .frame(maxWidth: .infinity, alignment: .leading)
+        }
+    }
 }
 
 struct SettingsView: View {
     @EnvironmentObject private var viewModel: ActivityViewModel
+    @EnvironmentObject private var dataStore: LocalDataStore
+    @State private var exclusionPattern: String = ""
+    @State private var goalCategoryId: UUID? = nil
+    @State private var goalMinutes: String = "60"
 
     var body: some View {
         Form {
@@ -729,10 +1229,193 @@ struct SettingsView: View {
                 }
             }
 
+            Section("Work Day") {
+                DatePicker("Start", selection: Binding(
+                    get: { dateForTime(dataStore.preferences.workDayStart) },
+                    set: { newValue in
+                        dataStore.updatePreferences { $0.workDayStart = timeFormatter().string(from: newValue) }
+                    }
+                ), displayedComponents: .hourAndMinute)
+
+                DatePicker("End", selection: Binding(
+                    get: { dateForTime(dataStore.preferences.workDayEnd) },
+                    set: { newValue in
+                        dataStore.updatePreferences { $0.workDayEnd = timeFormatter().string(from: newValue) }
+                        Task {
+                            if dataStore.preferences.goalNudgesEnabled {
+                                await NotificationManager.scheduleGoalNudge(time: newValue)
+                            }
+                        }
+                    }
+                ), displayedComponents: .hourAndMinute)
+            }
+
             Section("Apple Intelligence") {
                 AIStatusView()
                 Button("Refresh AI Status") {
                     viewModel.refreshAIAvailability()
+                }
+            }
+
+            Section("Privacy") {
+                Toggle("Private mode (pause tracking)", isOn: Binding(
+                    get: { dataStore.preferences.privateModeEnabled },
+                    set: { newValue in
+                        dataStore.updatePreferences { $0.privateModeEnabled = newValue }
+                        viewModel.refresh()
+                    }
+                ))
+
+                HStack {
+                    TextField("Exclude apps containing…", text: $exclusionPattern)
+                    Button("Add") {
+                        dataStore.addExclusion(pattern: exclusionPattern)
+                        exclusionPattern = ""
+                    }
+                    .disabled(exclusionPattern.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty)
+                }
+
+                if dataStore.exclusions.isEmpty {
+                    Text("No exclusions yet.")
+                        .foregroundColor(.secondary)
+                } else {
+                    ForEach(dataStore.exclusions) { rule in
+                        HStack {
+                            Text(rule.pattern)
+                            Spacer()
+                            Button("Remove") {
+                                dataStore.deleteExclusion(rule)
+                                viewModel.refresh()
+                            }
+                        }
+                    }
+                }
+            }
+
+            Section("Daily Review") {
+                Toggle("Enable daily review reminder", isOn: Binding(
+                    get: { dataStore.preferences.reviewReminderEnabled },
+                    set: { newValue in
+                        dataStore.updatePreferences { $0.reviewReminderEnabled = newValue }
+                        Task {
+                            if newValue {
+                                await NotificationManager.scheduleDailyReview(time: dateForTime(dataStore.preferences.reviewReminderTime))
+                            } else {
+                                await NotificationManager.clearDailyReview()
+                            }
+                        }
+                    }
+                ))
+                DatePicker("Reminder time", selection: Binding(
+                    get: { dateForTime(dataStore.preferences.reviewReminderTime) },
+                    set: { newValue in
+                        dataStore.updatePreferences { $0.reviewReminderTime = timeFormatter().string(from: newValue) }
+                        Task {
+                            if dataStore.preferences.reviewReminderEnabled {
+                                await NotificationManager.scheduleDailyReview(time: newValue)
+                            }
+                        }
+                    }
+                ), displayedComponents: .hourAndMinute)
+            }
+
+            Section("Goals") {
+                Picker("Category", selection: $goalCategoryId) {
+                    Text("Select category").tag(UUID?.none)
+                    ForEach(dataStore.categories) { category in
+                        Text(category.name).tag(Optional(category.id))
+                    }
+                }
+                TextField("Minutes per day", text: $goalMinutes)
+                    .frame(width: 120)
+                Button("Add Goal") {
+                    guard let categoryId = goalCategoryId,
+                          let minutes = Int(goalMinutes), minutes > 0 else { return }
+                    dataStore.addGoal(categoryId: categoryId, minutesPerDay: minutes)
+                }
+
+                Toggle("Enable goal nudges", isOn: Binding(
+                    get: { dataStore.preferences.goalNudgesEnabled },
+                    set: { newValue in
+                        dataStore.updatePreferences { $0.goalNudgesEnabled = newValue }
+                        Task {
+                            if newValue {
+                                await NotificationManager.scheduleGoalNudge(time: dateForTime(dataStore.preferences.workDayEnd))
+                            } else {
+                                await NotificationManager.clearGoalNudge()
+                            }
+                        }
+                    }
+                ))
+
+                if dataStore.goals.isEmpty {
+                    Text("No goals yet.")
+                        .foregroundColor(.secondary)
+                } else {
+                    ForEach(dataStore.goals) { goal in
+                        HStack {
+                            Text(dataStore.categoryName(for: goal.categoryId))
+                            Spacer()
+                            Text("\(goal.minutesPerDay) min/day")
+                                .foregroundColor(.secondary)
+                            Button("Remove") {
+                                dataStore.deleteGoal(goal)
+                            }
+                        }
+                    }
+                }
+            }
+
+            Section("Weekly Recap") {
+                Toggle("Enable weekly story recap", isOn: Binding(
+                    get: { dataStore.preferences.weeklyRecapEnabled },
+                    set: { newValue in
+                        dataStore.updatePreferences { $0.weeklyRecapEnabled = newValue }
+                    }
+                ))
+            }
+
+            Section("Integrations") {
+                Toggle("Calendar/meeting integration", isOn: Binding(
+                    get: { dataStore.preferences.calendarIntegrationEnabled },
+                    set: { newValue in
+                        if newValue {
+                            Task {
+                                do {
+                                    try await CalendarService.shared.requestAccess()
+                                    await MainActor.run {
+                                        dataStore.updatePreferences { $0.calendarIntegrationEnabled = true }
+                                        viewModel.refresh()
+                                    }
+                                } catch {
+                                    await MainActor.run {
+                                        dataStore.updatePreferences { $0.calendarIntegrationEnabled = false }
+                                    }
+                                }
+                            }
+                        } else {
+                            dataStore.updatePreferences { $0.calendarIntegrationEnabled = false }
+                            viewModel.refresh()
+                        }
+                    }
+                ))
+                Toggle("Email summary (coming soon)", isOn: Binding(
+                    get: { dataStore.preferences.emailSummaryEnabled },
+                    set: { newValue in
+                        dataStore.updatePreferences { $0.emailSummaryEnabled = newValue }
+                    }
+                ))
+            }
+
+            Section("Data & Backup") {
+                Toggle("Back up data to iCloud (coming soon)", isOn: Binding(
+                    get: { dataStore.preferences.iCloudBackupEnabled },
+                    set: { newValue in
+                        dataStore.updatePreferences { $0.iCloudBackupEnabled = newValue }
+                    }
+                ))
+                Button("Reveal Local Data Folder") {
+                    revealDataFolder()
                 }
             }
         }
@@ -748,6 +1431,27 @@ struct SettingsView: View {
 
     private func revealAppInFinder() {
         NSWorkspace.shared.activateFileViewerSelecting([Bundle.main.bundleURL])
+    }
+
+    private func revealDataFolder() {
+        let baseURL = FileManager.default.urls(for: .applicationSupportDirectory, in: .userDomainMask).first
+        let appURL = baseURL?.appendingPathComponent("JudgeChronos", isDirectory: true)
+        if let appURL {
+            NSWorkspace.shared.activateFileViewerSelecting([appURL])
+        }
+    }
+
+    private func dateForTime(_ value: String) -> Date {
+        let parts = value.split(separator: ":")
+        let hour = Int(parts.first ?? "9") ?? 9
+        let minute = Int(parts.dropFirst().first ?? "0") ?? 0
+        return Calendar.current.date(bySettingHour: hour, minute: minute, second: 0, of: Date()) ?? Date()
+    }
+
+    private func timeFormatter() -> DateFormatter {
+        let formatter = DateFormatter()
+        formatter.dateFormat = "HH:mm"
+        return formatter
     }
 }
 
@@ -794,6 +1498,36 @@ enum CSVExporter {
             return "\"\(escaped)\""
         }
         return value
+    }
+}
+
+enum JSONExporter {
+    @MainActor static func export(events: [ActivityEvent], dataStore: LocalDataStore) -> String {
+        struct ExportEvent: Codable {
+            let appName: String
+            let startTime: String
+            let endTime: String
+            let durationSeconds: Int
+            let category: String
+        }
+
+        let formatter = ISO8601DateFormatter()
+        let payload = events.map { event in
+            ExportEvent(
+                appName: event.appName,
+                startTime: formatter.string(from: event.startTime),
+                endTime: formatter.string(from: event.endTime),
+                durationSeconds: Int(event.duration),
+                category: event.isIdle ? "Idle" : dataStore.categoryName(for: event.categoryId)
+            )
+        }
+
+        let encoder = JSONEncoder()
+        encoder.outputFormatting = [.prettyPrinted, .sortedKeys]
+        guard let data = try? encoder.encode(payload) else {
+            return "[]"
+        }
+        return String(decoding: data, as: UTF8.self)
     }
 }
 

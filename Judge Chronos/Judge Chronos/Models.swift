@@ -2,6 +2,12 @@ import AppKit
 import Foundation
 import SwiftUI
 
+enum ActivityEventSource: String, Hashable {
+    case appUsage
+    case calendar
+    case idle
+}
+
 struct ActivityEvent: Identifiable, Hashable {
     let id: UUID
     let eventKey: String
@@ -11,6 +17,7 @@ struct ActivityEvent: Identifiable, Hashable {
     let duration: TimeInterval
     var categoryId: UUID?
     let isIdle: Bool
+    let source: ActivityEventSource
 }
 
 struct Category: Identifiable, Codable, Hashable {
@@ -25,10 +32,89 @@ struct Rule: Identifiable, Codable, Hashable {
     var categoryId: UUID
 }
 
+struct ExclusionRule: Identifiable, Codable, Hashable {
+    let id: UUID
+    var pattern: String
+}
+
+struct FocusSession: Identifiable, Codable, Hashable {
+    let id: UUID
+    var startTime: Date
+    var endTime: Date
+    var categoryId: UUID
+}
+
+struct Goal: Identifiable, Codable, Hashable {
+    let id: UUID
+    var categoryId: UUID
+    var minutesPerDay: Int
+}
+
+struct UserPreferences: Codable, Hashable {
+    var hasCompletedOnboarding: Bool
+    var workDayStart: String
+    var workDayEnd: String
+    var privateModeEnabled: Bool
+    var reviewReminderEnabled: Bool
+    var reviewReminderTime: String
+    var weeklyRecapEnabled: Bool
+    var goalNudgesEnabled: Bool
+    var emailSummaryEnabled: Bool
+    var calendarIntegrationEnabled: Bool
+    var iCloudBackupEnabled: Bool
+
+    static let `default` = UserPreferences(
+        hasCompletedOnboarding: false,
+        workDayStart: "09:00",
+        workDayEnd: "17:00",
+        privateModeEnabled: false,
+        reviewReminderEnabled: false,
+        reviewReminderTime: "17:30",
+        weeklyRecapEnabled: true,
+        goalNudgesEnabled: false,
+        emailSummaryEnabled: false,
+        calendarIntegrationEnabled: false,
+        iCloudBackupEnabled: false
+    )
+}
+
 struct LocalData: Codable {
     var categories: [Category]
     var rules: [Rule]
     var assignments: [String: UUID]
+    var exclusions: [ExclusionRule]
+    var focusSessions: [FocusSession]
+    var goals: [Goal]
+    var preferences: UserPreferences
+
+    init(
+        categories: [Category] = [],
+        rules: [Rule] = [],
+        assignments: [String: UUID] = [:],
+        exclusions: [ExclusionRule] = [],
+        focusSessions: [FocusSession] = [],
+        goals: [Goal] = [],
+        preferences: UserPreferences = .default
+    ) {
+        self.categories = categories
+        self.rules = rules
+        self.assignments = assignments
+        self.exclusions = exclusions
+        self.focusSessions = focusSessions
+        self.goals = goals
+        self.preferences = preferences
+    }
+
+    init(from decoder: Decoder) throws {
+        let container = try decoder.container(keyedBy: CodingKeys.self)
+        categories = try container.decodeIfPresent([Category].self, forKey: .categories) ?? []
+        rules = try container.decodeIfPresent([Rule].self, forKey: .rules) ?? []
+        assignments = try container.decodeIfPresent([String: UUID].self, forKey: .assignments) ?? [:]
+        exclusions = try container.decodeIfPresent([ExclusionRule].self, forKey: .exclusions) ?? []
+        focusSessions = try container.decodeIfPresent([FocusSession].self, forKey: .focusSessions) ?? []
+        goals = try container.decodeIfPresent([Goal].self, forKey: .goals) ?? []
+        preferences = try container.decodeIfPresent(UserPreferences.self, forKey: .preferences) ?? .default
+    }
 }
 
 enum ActivityEventKey {
@@ -36,6 +122,33 @@ enum ActivityEventKey {
         let start = Int(startTime.timeIntervalSince1970)
         let end = Int(endTime.timeIntervalSince1970)
         return "event|\(start)|\(end)|\(appName)"
+    }
+}
+
+enum ActivityGrouping {
+    static let separators: [String] = [" — ", " - ", ": "]
+
+    static func split(appName: String) -> (app: String, title: String?) {
+        for separator in separators {
+            if let range = appName.range(of: separator) {
+                let app = String(appName[..<range.lowerBound]).trimmingCharacters(in: .whitespacesAndNewlines)
+                let title = String(appName[range.upperBound...]).trimmingCharacters(in: .whitespacesAndNewlines)
+                if !app.isEmpty, !title.isEmpty {
+                    return (app, title)
+                }
+            }
+        }
+        return (appName, nil)
+    }
+}
+
+extension ActivityEvent {
+    var appDisplayName: String {
+        ActivityGrouping.split(appName: appName).app
+    }
+
+    var windowTitle: String? {
+        ActivityGrouping.split(appName: appName).title
     }
 }
 
