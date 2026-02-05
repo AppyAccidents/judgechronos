@@ -5,7 +5,56 @@ import SwiftUI
 enum ActivityEventSource: String, Hashable {
     case appUsage
     case calendar
+    case calendar
     case idle
+}
+
+struct RawEvent: Identifiable, Hashable, Codable {
+    let id: UUID
+    let timestamp: Date
+    let duration: TimeInterval
+    let bundleId: String?
+    let appName: String
+    let windowTitle: String?
+    let source: ActivityEventSource
+    let metadataHash: String
+    let importedAt: Date
+}
+
+struct Session: Identifiable, Hashable, Codable {
+    let id: UUID
+    var startTime: Date
+    var endTime: Date
+    var duration: TimeInterval { endTime.timeIntervalSince(startTime) }
+    var sourceApp: String
+    var rawEventIds: [UUID]
+    var projectId: UUID?
+    var categoryId: UUID?
+    var tagIds: Set<UUID>
+    var note: String?
+    var isPrivate: Bool
+    var isIdle: Bool
+}
+
+struct Project: Identifiable, Codable, Hashable {
+    let id: UUID
+    var name: String
+    var colorHex: String
+    var parentId: UUID?
+}
+
+struct Tag: Identifiable, Codable, Hashable {
+    let id: UUID
+    var name: String
+    var colorHex: String
+}
+
+struct RuleMatch: Identifiable, Codable, Hashable {
+    let id: UUID
+    let ruleId: UUID
+    let sessionId: UUID
+    let timestamp: Date
+    let appliedChanges: String // JSON or description of what changed
 }
 
 struct ActivityEvent: Identifiable, Hashable {
@@ -28,8 +77,25 @@ struct Category: Identifiable, Codable, Hashable {
 
 struct Rule: Identifiable, Codable, Hashable {
     let id: UUID
-    var pattern: String
-    var categoryId: UUID
+    var name: String // Description of the rule
+    var priority: Int
+    var isEnabled: Bool
+    
+    // Conditions
+    var bundleIdPattern: String?
+    var appNamePattern: String?
+    var windowTitlePattern: String?
+    var minDuration: TimeInterval?
+    
+    // Actions
+    var targetProjectId: UUID?
+    var targetCategoryId: UUID?
+    var targetTagIds: Set<UUID>
+    var markAsPrivate: Bool
+    
+    // Legacy support for pattern match in RulesView
+    var pattern: String { appNamePattern ?? "" }
+    var categoryId: UUID { targetCategoryId ?? UUID() }
 }
 
 struct ExclusionRule: Identifiable, Codable, Hashable {
@@ -62,6 +128,10 @@ struct UserPreferences: Codable, Hashable {
     var emailSummaryEnabled: Bool
     var calendarIntegrationEnabled: Bool
     var iCloudBackupEnabled: Bool
+    
+    // Phase 1: Incremental Import State
+    var lastImportTimestamp: Date?
+    var lastImportHash: String?
 
     static let `default` = UserPreferences(
         hasCompletedOnboarding: false,
@@ -74,7 +144,9 @@ struct UserPreferences: Codable, Hashable {
         goalNudgesEnabled: false,
         emailSummaryEnabled: false,
         calendarIntegrationEnabled: false,
-        iCloudBackupEnabled: false
+        iCloudBackupEnabled: false,
+        lastImportTimestamp: nil,
+        lastImportHash: nil
     )
 }
 
@@ -86,6 +158,13 @@ struct LocalData: Codable {
     var focusSessions: [FocusSession]
     var goals: [Goal]
     var preferences: UserPreferences
+    
+    // Phase 0: New Data Models
+    var rawEvents: [RawEvent] = []
+    var sessions: [Session] = []
+    var projects: [Project] = []
+    var tags: [Tag] = []
+    var ruleMatches: [RuleMatch] = []
 
     init(
         categories: [Category] = [],
@@ -94,7 +173,12 @@ struct LocalData: Codable {
         exclusions: [ExclusionRule] = [],
         focusSessions: [FocusSession] = [],
         goals: [Goal] = [],
-        preferences: UserPreferences = .default
+        preferences: UserPreferences = .default,
+        rawEvents: [RawEvent] = [],
+        sessions: [Session] = [],
+        projects: [Project] = [],
+        tags: [Tag] = [],
+        ruleMatches: [RuleMatch] = []
     ) {
         self.categories = categories
         self.rules = rules
@@ -103,6 +187,11 @@ struct LocalData: Codable {
         self.focusSessions = focusSessions
         self.goals = goals
         self.preferences = preferences
+        self.rawEvents = rawEvents
+        self.sessions = sessions
+        self.projects = projects
+        self.tags = tags
+        self.ruleMatches = ruleMatches
     }
 
     init(from decoder: Decoder) throws {
@@ -114,6 +203,13 @@ struct LocalData: Codable {
         focusSessions = try container.decodeIfPresent([FocusSession].self, forKey: .focusSessions) ?? []
         goals = try container.decodeIfPresent([Goal].self, forKey: .goals) ?? []
         preferences = try container.decodeIfPresent(UserPreferences.self, forKey: .preferences) ?? .default
+        
+        // Phase 0: Decode new models
+        rawEvents = try container.decodeIfPresent([RawEvent].self, forKey: .rawEvents) ?? []
+        sessions = try container.decodeIfPresent([Session].self, forKey: .sessions) ?? []
+        projects = try container.decodeIfPresent([Project].self, forKey: .projects) ?? []
+        tags = try container.decodeIfPresent([Tag].self, forKey: .tags) ?? []
+        ruleMatches = try container.decodeIfPresent([RuleMatch].self, forKey: .ruleMatches) ?? []
     }
 }
 

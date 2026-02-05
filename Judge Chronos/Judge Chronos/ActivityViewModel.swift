@@ -56,12 +56,18 @@ final class ActivityViewModel: ObservableObject {
             return
         }
         do {
+        do {
+            // Trigger incremental import first
+            try await dataStore.performIncrementalImport()
+            
             var rawEvents: [ActivityEvent]
             if rangeEnabled {
                 let normalized = normalizedRange()
-                rawEvents = try database.fetchEvents(from: normalized.start, to: normalized.end)
+                rawEvents = dataStore.events(from: normalized.start, to: normalized.end)
             } else {
-                rawEvents = try database.fetchEvents(for: selectedDate)
+                let startOfDay = Calendar.current.startOfDay(for: selectedDate)
+                let endOfDay = Calendar.current.date(byAdding: .day, value: 1, to: startOfDay) ?? startOfDay.addingTimeInterval(86400)
+                rawEvents = dataStore.events(from: startOfDay, to: endOfDay)
             }
             if dataStore.preferences.calendarIntegrationEnabled {
                 let calendarEvents = try calendarActivityEvents(
@@ -77,17 +83,15 @@ final class ActivityViewModel: ObservableObject {
             events = dataStore.applyCategories(to: withIdle)
             pruneSuggestions()
             lastRefresh = Date()
-        } catch ActivityDatabaseError.openFailed {
+            pruneSuggestions()
+            lastRefresh = Date()
+        } catch KnowledgeCReaderError.permissionDenied {
             showingOnboarding = true
             errorMessage = "Full Disk Access is required to read activity data."
             events = []
-        } catch ActivityDatabaseError.queryFailed(let error) {
-            showingOnboarding = false
-            errorMessage = "Failed to load events: \(error.localizedDescription)"
-            events = []
         } catch {
             showingOnboarding = false
-            errorMessage = "Failed to load events."
+            errorMessage = "Failed to load events: \(error.localizedDescription)"
             events = []
         }
     }
@@ -102,8 +106,13 @@ final class ActivityViewModel: ObservableObject {
     }
 
     func updateCategory(for event: ActivityEvent, categoryId: UUID?) {
-        dataStore.assignCategory(eventKey: event.eventKey, categoryId: categoryId)
+        // Phase 2: Update Session
+        dataStore.updateSessionCategory(sessionId: event.id, categoryId: categoryId)
         events = dataStore.applyCategories(to: events)
+    }
+
+    func exportData() throws -> Data {
+        return try DataExporter.shared.exportAllData(from: dataStore)
     }
 
     func normalizedRange() -> (start: Date, end: Date) {
@@ -220,8 +229,8 @@ final class ActivityViewModel: ObservableObject {
             guard let previousStart = calendar.date(byAdding: .day, value: -7, to: startOfWeek),
                   let previousEnd = calendar.date(byAdding: .day, value: -1, to: startOfWeek) else { return }
 
-            var currentRaw = try database.fetchEvents(from: startOfWeek, to: endOfWeek)
-            var previousRaw = try database.fetchEvents(from: previousStart, to: previousEnd)
+            var currentRaw = dataStore.events(from: startOfWeek, to: endOfWeek)
+            var previousRaw = dataStore.events(from: previousStart, to: previousEnd)
             if dataStore.preferences.calendarIntegrationEnabled {
                 currentRaw.append(contentsOf: try calendarActivityEvents(from: startOfWeek, to: endOfWeek))
                 previousRaw.append(contentsOf: try calendarActivityEvents(from: previousStart, to: previousEnd))

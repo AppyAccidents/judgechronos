@@ -411,6 +411,25 @@ struct OnboardingCardView: View {
     private func revealAppInFinder() {
         NSWorkspace.shared.activateFileViewerSelecting([Bundle.main.bundleURL])
     }
+
+    private func exportJSON() {
+        let panel = NSSavePanel()
+        panel.allowedContentTypes = [UTType.json]
+        let formatter = DateFormatter()
+        formatter.dateFormat = "yyyy-MM-dd"
+        let dateString = formatter.string(from: Date())
+        panel.nameFieldStringValue = "judge-chronos-backup-\(dateString).json"
+        panel.canCreateDirectories = true
+        panel.begin { result in
+            guard result == .OK, let url = panel.url else { return }
+            do {
+                let data = try viewModel.exportData()
+                try data.write(to: url, options: [.atomic])
+            } catch {
+                // error handling
+            }
+        }
+    }
 }
 
 struct OnboardingFlowView: View {
@@ -621,10 +640,18 @@ struct TimelineRow: View {
                     .frame(width: 220)
 
                     let ruleCategory = dataStore.ruleCategoryForApp(event.appName)
-                    if dataStore.assignmentForEvent(event) == nil, let ruleCategory {
-                        Text("Auto: \(dataStore.categoryName(for: ruleCategory))")
-                            .font(.footnote)
-                            .foregroundColor(.secondary)
+                    if dataStore.assignmentForEvent(event) == nil {
+                        if let match = dataStore.ruleMatches.first(where: { $0.sessionId == event.id }),
+                           let rule = dataStore.rules.first(where: { $0.id == match.ruleId }) {
+                            Text("Matched: \(rule.name)")
+                                .font(.footnote)
+                                .foregroundColor(.blue)
+                                .help("Applied via '\(rule.name)' because it matched \(match.appliedChanges)")
+                        } else if let ruleCategory = ruleCategory {
+                            Text("Auto: \(dataStore.categoryName(for: ruleCategory))")
+                                .font(.footnote)
+                                .foregroundColor(.secondary)
+                        }
                     }
                 }
 
@@ -933,12 +960,16 @@ struct CategoryRow: View {
 
 struct RulesView: View {
     @EnvironmentObject private var dataStore: LocalDataStore
+    @State private var name: String = ""
     @State private var pattern: String = ""
     @State private var selectedCategoryId: UUID? = nil
+    @State private var priority: Int = 10
+    @State private var markAsPrivate: Bool = false
 
     var body: some View {
         List {
             Section("Add Rule") {
+                TextField("Rule Name (e.g., Coding Time)", text: $name)
                 TextField("App name contains", text: $pattern)
                 Picker("Category", selection: $selectedCategoryId) {
                     Text("Select category").tag(UUID?.none)
@@ -946,30 +977,58 @@ struct RulesView: View {
                         Text(category.name).tag(Optional(category.id))
                     }
                 }
-                Button("Add") {
-                    guard let categoryId = selectedCategoryId,
-                          !pattern.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty else { return }
-                    dataStore.addRule(pattern: pattern, categoryId: categoryId)
+                Stepper("Priority: \(priority)", value: $priority, in: 1...100)
+                Toggle("Mark as Private", isOn: $markAsPrivate)
+                
+                Button("Add Rule") {
+                    guard !name.isEmpty, !pattern.isEmpty else { return }
+                    dataStore.addRule(
+                        name: name,
+                        appNamePattern: pattern,
+                        categoryId: selectedCategoryId,
+                        priority: priority,
+                        markAsPrivate: markAsPrivate
+                    )
+                    name = ""
                     pattern = ""
+                    priority = 10
+                    markAsPrivate = false
                 }
             }
 
-            Section("Rules") {
+            Section("Existing Rules") {
                 if dataStore.rules.isEmpty {
                     Text("No rules yet.")
                         .foregroundColor(.secondary)
                 } else {
-                    ForEach(dataStore.rules) { rule in
-                        HStack {
+                    ForEach(dataStore.rules.sorted { $0.priority > $1.priority }) { rule in
+                        VStack(alignment: .leading, spacing: 4) {
+                            HStack {
+                                Text(rule.name)
+                                    .font(.headline)
+                                if rule.markAsPrivate {
+                                    Image(systemName: "eye.slash")
+                                        .foregroundColor(.orange)
+                                }
+                                Spacer()
+                                Text("P\(rule.priority)")
+                                    .font(.caption)
+                                    .padding(.horizontal, 6)
+                                    .background(Color.secondary.opacity(0.2))
+                                    .cornerRadius(4)
+                            }
                             Text("Contains: \(rule.pattern)")
-                            Spacer()
-                            Text(dataStore.categoryName(for: rule.categoryId))
+                                .font(.subheadline)
                                 .foregroundColor(.secondary)
+                            Text(dataStore.categoryName(for: rule.targetCategoryId))
+                                .font(.footnote)
+                                .foregroundColor(.blue)
                         }
                     }
                     .onDelete { indexSet in
+                        let sortedRules = dataStore.rules.sorted { $0.priority > $1.priority }
                         for index in indexSet {
-                            let rule = dataStore.rules[index]
+                            let rule = sortedRules[index]
                             dataStore.deleteRule(rule)
                         }
                     }
@@ -977,7 +1036,7 @@ struct RulesView: View {
             }
         }
         .padding()
-        .navigationTitle("Rules")
+        .navigationTitle("Automation Rules")
     }
 }
 
@@ -987,16 +1046,33 @@ struct ReportsView: View {
     @State private var exportStatus: String? = nil
     @State private var isLoadingWeeklyRecap: Bool = false
 
-    private var totals: [(String, Double, Color)] {
-        let grouped = Dictionary(grouping: viewModel.events) { event in
-            if event.isIdle { return "Idle" }
-            return dataStore.categoryName(for: event.categoryId)
+    private var report: Report {
+        let interval: DateInterval
+        if viewModel.rangeEnabled {
+            let normalized = viewModel.normalizedRange()
+            interval = DateInterval(start: normalized.start, end: normalized.end)
+        } else {
+            let start = Calendar.current.startOfDay(for: viewModel.selectedDate)
+            let end = Calendar.current.date(byAdding: .day, value: 1, to: start) ?? start.addingTimeInterval(86400)
+            interval = DateInterval(start: start, end: end)
         }
-        return grouped.map { name, events in
-            let total = events.reduce(0) { $0 + $1.duration }
-            let color = name == "Idle" ? Color.gray : dataStore.categoryColor(for: events.first?.categoryId)
-            return (name, total, color)
-        }.sorted { $0.1 > $1.1 }
+        
+        // Phase 2: We use derived sessions from VM
+        // Actually, ReportingService works on [Session] directly.
+        return ReportingService.shared.generateReport(for: interval, sessions: dataStore.snapshot().sessions)
+    }
+
+    private var totals: [(String, Double, Color)] {
+        var items: [(String, Double, Color)] = []
+        
+        // Categories
+        for (categoryId, duration) in report.byCategory {
+            let name = dataStore.categoryName(for: categoryId)
+            let color = dataStore.categoryColor(for: categoryId)
+            items.append((name, duration, color))
+        }
+        
+        return items.sorted { $0.1 > $1.1 }
     }
 
     var body: some View {
@@ -1010,7 +1086,7 @@ struct ReportsView: View {
 
             goalsProgressSection
 
-            if totals.isEmpty {
+            if report.totalDuration == 0 {
                 EmptyStateView()
             } else {
                 Chart {
@@ -1250,7 +1326,7 @@ struct SettingsView: View {
                 ), displayedComponents: .hourAndMinute)
             }
 
-            Section("Apple Intelligence") {
+            Section(header: Text("Apple Intelligence"), footer: Text("Requires macOS 15+ and a compatible Mac.")) {
                 AIStatusView()
                 Button("Refresh AI Status") {
                     viewModel.refreshAIAvailability()
@@ -1373,6 +1449,15 @@ struct SettingsView: View {
                         dataStore.updatePreferences { $0.weeklyRecapEnabled = newValue }
                     }
                 ))
+            }
+
+            Section("Data Portability") {
+                Text("Export all your activity, rules, and categories as a lossless JSON file.")
+                    .font(.footnote)
+                    .foregroundColor(.secondary)
+                Button("Export Lossless Data (JSON)") {
+                    exportJSON()
+                }
             }
 
             Section("Integrations") {

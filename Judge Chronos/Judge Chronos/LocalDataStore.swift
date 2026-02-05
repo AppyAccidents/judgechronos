@@ -9,6 +9,14 @@ final class LocalDataStore: ObservableObject {
     @Published private(set) var exclusions: [ExclusionRule] = []
     @Published private(set) var focusSessions: [FocusSession] = []
     @Published private(set) var goals: [Goal] = []
+    
+    // Phase 0: New Data Models
+    @Published private(set) var rawEvents: [RawEvent] = []
+    @Published private(set) var sessions: [Session] = []
+    @Published private(set) var projects: [Project] = []
+    @Published private(set) var tags: [Tag] = []
+    @Published private(set) var ruleMatches: [RuleMatch] = []
+    
     @Published var preferences: UserPreferences = .default
 
     private let fileURL: URL
@@ -35,6 +43,11 @@ final class LocalDataStore: ObservableObject {
             exclusions = decoded.exclusions
             focusSessions = decoded.focusSessions
             goals = decoded.goals
+            rawEvents = decoded.rawEvents
+            sessions = decoded.sessions
+            projects = decoded.projects
+            tags = decoded.tags
+            ruleMatches = decoded.ruleMatches
             preferences = decoded.preferences
         } catch {
             categories = []
@@ -43,6 +56,11 @@ final class LocalDataStore: ObservableObject {
             exclusions = []
             focusSessions = []
             goals = []
+            rawEvents = []
+            sessions = []
+            projects = []
+            tags = []
+            ruleMatches = []
             preferences = .default
             save()
         }
@@ -59,7 +77,12 @@ final class LocalDataStore: ObservableObject {
                 exclusions: exclusions,
                 focusSessions: focusSessions,
                 goals: goals,
-                preferences: preferences
+                preferences: preferences,
+                rawEvents: rawEvents,
+                sessions: sessions,
+                projects: projects,
+                tags: tags,
+                ruleMatches: ruleMatches
             )
             let data = try JSONEncoder().encode(payload)
             try data.write(to: fileURL, options: [.atomic])
@@ -88,14 +111,33 @@ final class LocalDataStore: ObservableObject {
         save()
     }
 
-    func addRule(pattern: String, categoryId: UUID) {
-        let rule = Rule(id: UUID(), pattern: pattern, categoryId: categoryId)
+    func addRule(name: String, appNamePattern: String?, categoryId: UUID?, priority: Int = 10, markAsPrivate: Bool = false) {
+        let rule = Rule(
+            id: UUID(),
+            name: name,
+            priority: priority,
+            isEnabled: true,
+            bundleIdPattern: nil,
+            appNamePattern: appNamePattern,
+            windowTitlePattern: nil,
+            minDuration: nil,
+            targetProjectId: nil,
+            targetCategoryId: categoryId,
+            targetTagIds: [],
+            markAsPrivate: markAsPrivate
+        )
         rules.append(rule)
         save()
     }
 
     func deleteRule(_ rule: Rule) {
         rules.removeAll { $0.id == rule.id }
+        save()
+    }
+
+    func updateRule(_ rule: Rule) {
+        guard let index = rules.firstIndex(where: { $0.id == rule.id }) else { return }
+        rules[index] = rule
         save()
     }
 
@@ -137,6 +179,11 @@ final class LocalDataStore: ObservableObject {
     }
 
     func categoryForEvent(_ event: ActivityEvent) -> UUID? {
+        // Phase 2: Check Session Assignment first
+        if let session = sessions.first(where: { $0.id == event.id }), let manual = session.categoryId {
+            return manual
+        }
+        
         if let assignment = assignments[event.eventKey] {
             return assignment
         }
@@ -148,8 +195,13 @@ final class LocalDataStore: ObservableObject {
         }
         return ruleCategoryForApp(event.appName)
     }
-
+    
     func assignmentForEvent(_ event: ActivityEvent) -> UUID? {
+        // Phase 2: Check Session Assignment first
+        if let session = sessions.first(where: { $0.id == event.id }) {
+            return session.categoryId
+        }
+        
         if let assignment = assignments[event.eventKey] {
             return assignment
         }
@@ -263,4 +315,83 @@ final class LocalDataStore: ObservableObject {
         }
         return color
     }
+    
+    // MARK: - Phase 1: extraction & Retrieval
+    
+    func performIncrementalImport() async throws {
+        let lastImport = preferences.lastImportTimestamp
+        let newEvents = try KnowledgeCReader.shared.fetchEvents(since: lastImport)
+        
+        let existingHashes = Set(rawEvents.map { $0.metadataHash })
+        var addedEvents: [RawEvent] = []
+        
+        for event in newEvents {
+            if !existingHashes.contains(event.metadataHash) {
+                rawEvents.append(event)
+                addedEvents.append(event)
+            }
+        }
+        
+        if !addedEvents.isEmpty {
+            rawEvents.sort { $0.timestamp < $1.timestamp }
+            
+            // Phase 2: Derive Sessions from new events
+            // Phase 3: Apply Rules during derivation
+            let matches = SessionManager.shared.updateSessions(&sessions, with: addedEvents, rules: rules)
+            ruleMatches.append(contentsOf: matches)
+            
+            // Update timestamp to the latest event time we imported
+            if let latest = newEvents.last?.timestamp {
+                updatePreferences { prefs in
+                    prefs.lastImportTimestamp = latest
+                }
+            }
+            save()
+        }
+    }
+    
+    func updateSessionCategory(sessionId: UUID, categoryId: UUID?) {
+        guard let index = sessions.firstIndex(where: { $0.id == sessionId }) else { return }
+        sessions[index].categoryId = categoryId
+        save()
+    }
+    
+    func events(from startDate: Date, to endDate: Date) -> [ActivityEvent] {
+        // Phase 2: Read from Derived Sessions instead of Raw Events!
+        let filtered = sessions.filter {
+            $0.startTime < endDate && $0.endTime > startDate
+        }
+        
+        return filtered.map { session in
+            ActivityEvent(
+                id: session.id, // Use Session ID
+                eventKey: "session|\(session.id.uuidString)", // Unique key for session
+                appName: session.sourceApp,
+                startTime: session.startTime,
+                endTime: session.endTime,
+                duration: session.duration,
+                categoryId: session.categoryId, // Use Session's manually assigned category
+                isIdle: session.isIdle,
+                source: session.isIdle ? .idle : .appUsage
+            )
+        }
+    }
+
+    func snapshot() -> LocalData {
+        return LocalData(
+            categories: categories,
+            rules: rules,
+            assignments: assignments,
+            exclusions: exclusions,
+            focusSessions: focusSessions,
+            goals: goals,
+            preferences: preferences,
+            rawEvents: rawEvents,
+            sessions: sessions,
+            projects: projects,
+            tags: tags,
+            ruleMatches: ruleMatches
+        )
+    }
+    
 }

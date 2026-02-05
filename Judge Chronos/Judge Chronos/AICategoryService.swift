@@ -19,7 +19,7 @@ protocol AICategoryServiceType {
 #if canImport(FoundationModels)
 import FoundationModels
 
-@available(macOS 26, *)
+@available(macOS 15, *)
 final class AICategoryService: AICategoryServiceType {
     private let session: LanguageModelSession
 
@@ -68,14 +68,14 @@ final class AICategoryService: AICategoryServiceType {
     }
 }
 
-@available(macOS 26, *)
+@available(macOS 15, *)
 @Generable
 struct CategorySuggestion {
     @Guide(description: "Short category name") var category: String
     @Guide(description: "Optional reason for the suggestion") var rationale: String?
 }
 
-@available(macOS 26, *)
+@available(macOS 15, *)
 @Generable
 struct CategoryList {
     @Guide(description: "List of concise category names") var categories: [String]

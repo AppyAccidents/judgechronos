@@ -7,8 +7,10 @@ enum ActivityDatabaseError: Error {
 }
 
 final class ActivityDatabase {
+    @available(*, deprecated, message: "Use KnowledgeCReader and LocalDataStore instead")
     static let macAbsoluteTimeIntervalSince1970: TimeInterval = 978307200
 
+    @available(*, deprecated, message: "Use KnowledgeCReader instead")
     private var databasePath: String {
         let home = NSHomeDirectory()
         return home + "/Library/Application Support/Knowledge/knowledgeC.db"
