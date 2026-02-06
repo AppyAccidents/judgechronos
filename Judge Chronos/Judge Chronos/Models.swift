@@ -165,6 +165,7 @@ struct LocalData: Codable {
     var projects: [Project] = []
     var tags: [Tag] = []
     var ruleMatches: [RuleMatch] = []
+    var contextEvents: [ContextEvent] = []
 
     init(
         categories: [Category] = [],
@@ -178,7 +179,8 @@ struct LocalData: Codable {
         sessions: [Session] = [],
         projects: [Project] = [],
         tags: [Tag] = [],
-        ruleMatches: [RuleMatch] = []
+        ruleMatches: [RuleMatch] = [],
+        contextEvents: [ContextEvent] = []
     ) {
         self.categories = categories
         self.rules = rules
@@ -192,6 +194,7 @@ struct LocalData: Codable {
         self.projects = projects
         self.tags = tags
         self.ruleMatches = ruleMatches
+        self.contextEvents = contextEvents
     }
 
     init(from decoder: Decoder) throws {
@@ -210,6 +213,7 @@ struct LocalData: Codable {
         projects = try container.decodeIfPresent([Project].self, forKey: .projects) ?? []
         tags = try container.decodeIfPresent([Tag].self, forKey: .tags) ?? []
         ruleMatches = try container.decodeIfPresent([RuleMatch].self, forKey: .ruleMatches) ?? []
+        contextEvents = try container.decodeIfPresent([ContextEvent].self, forKey: .contextEvents) ?? []
     }
 }
 

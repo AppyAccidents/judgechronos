@@ -61,15 +61,25 @@ This keeps raw extraction honest while making reporting usable.
 * Data retention controls:
     * auto-delete raw events older than N days (if user wants)
 
-### 8) Resilience against macOS changes
-Reading `knowledgeC.db` can be fragile across macOS versions:
-* Build a **schema adapter** layer:
-    * detect columns/tables present
-    * graceful degradation if fields disappear
-* Add diagnostics page:
-    * last successful import time
-    * permissions status
-    * what source fields are currently available
+### 9) "Timing App" Parity (The Gold Standard)
+* **Automatic Context Tracking**:
+    *   Track **Window Titles** & **Document Paths** (Privacy-first, local only).
+    *   Track **Websites** (Browser extensions or accessibility).
+*   **Interactive Visual Timeline**:
+    *   Horizontal scrolling "Metro Map" of the day.
+    *   Drag-and-drop categorization blocks.
+    *   Gap filling ("What did you do here?").
+*   **Intelligence & Automation**:
+    *   **AI Summaries**: "You spent 4h on Project X".
+    *   **Smart Grouping**: Auto-cluster related small tasks.
+    *   **Idle Detection**: "You were away for 45m. Meeting? Lunch?"
+*   **Connectivity**:
+    *   **Calendar Overlay**: See meetings events under the usage timeline.
+    *   **Screen Time Import**: Import iOS/iPad usage for a complete picture.
+    *   **Call/Meeting Capture**: Prompt to log time after calls.
+*   **Team & Automation**:
+    *   Share project configs (privacy-preserving).
+    *   AppleScript / Shortcuts support for timers.
 
 ---
 
@@ -84,11 +94,41 @@ Reading `knowledgeC.db` can be fragile across macOS versions:
 | 4 | Reporting + export | Advanced aggregation, trend analysis, CSV+JSON exports | ✅ |
 | 5 | UI Integration | Rule Editor, Session Audit, Settings panels | ✅ |
 | 6 | Distribution Ready | Hygiene, README architecture, Code of Conduct | ✅ |
-| 7 | Next Gen (Post-MVP) | Menubar app, Local Encryption, Apple Intel enhancements | 🗺️ |
+| 7 | Menubar Companion | Real-time "Current App", Focus Session controls | ✅ |
+| 8 | Deep Context (Data) | Window Titles, URL tracking, Document paths, Idle categorization | 🚧 |
+| 9 | Visual Timeline (UI) | Interactive Chart, Drag-drop assignment, Calendar overlay | 🗺️ |
+| 10 | Intelligence (AI) | LLM Summaries, Smart Suggestions, "What did you do?" prompts | 🗺️ |
+| 11 | Ecosystem | Screen Time import, Shortcuts support, Team config sharing | 🗺️ |
 
 ---
 
-## Phase 0 — Foundation (1–2 weeks)
+## Phase 8 — Deep Context (The "Brain")
+* **Window Title & Document Tracking**
+    *   Use Accessibility API (`AXUIElement`) to poll active window titles.
+    *   Privacy: Local-only, heavy sanitization (strip emails/PII).
+    *   New Data Entity: `ContextEvent` linked to `RawEvent`.
+* **Idle Detection & Classification**
+    *   Detect system idle > N minutes.
+    *   Create "Idle Sessions" automatically.
+    *   Prompt user on return: "Was this a meeting?"
+* **Web & Call Context**
+    *   Browser extension integration (optional).
+    *   Meeting detection (Calendar logic + Mic usage inference?).
+
+## Phase 9 — Interactive Timeline (The "Look")
+* **Timeline Visualization**
+    *   Horizontal scrolling time-blocks view (Swift Charts or Custom Layout).
+    *   Zoom levels (Day/Hour).
+* **Direct Manipulation**
+    *   Drag-select range to categorize.
+    *   Click gap to fill.
+* **Calendar Layer**
+    *   Draw Calendar events as a background layer for context.
+
+## Phase 10 — Intelligence
+*   **Smart Grouping**: Cluster "VSCode + Terminal + Localhost" into "Coding Session".
+*   **AI Summaries**: "Today you focused mainly on the Refactor."
+
 * **Repo hygiene**
     * `CONTRIBUTING.md`, `CODE_OF_CONDUCT.md`, issue templates
     * Define “privacy stance” in `README` (what you read, what you store, where)

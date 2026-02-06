@@ -10,12 +10,15 @@ final class LocalDataStore: ObservableObject {
     @Published private(set) var focusSessions: [FocusSession] = []
     @Published private(set) var goals: [Goal] = []
     
+    static let shared = LocalDataStore() // For App Intents access
+    
     // Phase 0: New Data Models
     @Published private(set) var rawEvents: [RawEvent] = []
     @Published private(set) var sessions: [Session] = []
     @Published private(set) var projects: [Project] = []
     @Published private(set) var tags: [Tag] = []
     @Published private(set) var ruleMatches: [RuleMatch] = []
+    @Published private(set) var contextEvents: [ContextEvent] = []
     
     @Published var preferences: UserPreferences = .default
 
@@ -48,6 +51,7 @@ final class LocalDataStore: ObservableObject {
             projects = decoded.projects
             tags = decoded.tags
             ruleMatches = decoded.ruleMatches
+            contextEvents = decoded.contextEvents
             preferences = decoded.preferences
         } catch {
             categories = []
@@ -61,6 +65,7 @@ final class LocalDataStore: ObservableObject {
             projects = []
             tags = []
             ruleMatches = []
+            contextEvents = []
             preferences = .default
             save()
         }
@@ -82,7 +87,8 @@ final class LocalDataStore: ObservableObject {
                 sessions: sessions,
                 projects: projects,
                 tags: tags,
-                ruleMatches: ruleMatches
+                ruleMatches: ruleMatches,
+                contextEvents: contextEvents
             )
             let data = try JSONEncoder().encode(payload)
             try data.write(to: fileURL, options: [.atomic])
@@ -151,6 +157,23 @@ final class LocalDataStore: ObservableObject {
 
     func deleteExclusion(_ rule: ExclusionRule) {
         exclusions.removeAll { $0.id == rule.id }
+        save()
+    }
+    
+    func addContextEvent(_ event: ContextEvent) {
+        contextEvents.append(event)
+        // Optional: Prune old events here if needed
+        save()
+    }
+    
+    func addRawEvent(_ event: RawEvent) {
+        rawEvents.append(event)
+        // Trigger session derivation for this new event immediately?
+        // Phase 2: Yes, we should update sessions.
+        let matches = SessionManager.shared.updateSessions(&sessions, with: [event], rules: rules)
+        if !matches.isEmpty {
+            ruleMatches.append(contentsOf: matches)
+        }
         save()
     }
 
@@ -390,7 +413,8 @@ final class LocalDataStore: ObservableObject {
             sessions: sessions,
             projects: projects,
             tags: tags,
-            ruleMatches: ruleMatches
+            ruleMatches: ruleMatches,
+            contextEvents: contextEvents
         )
     }
     

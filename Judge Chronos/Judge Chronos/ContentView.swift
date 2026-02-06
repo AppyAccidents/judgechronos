@@ -50,6 +50,8 @@ struct ContentView: View {
     @State private var selection: SidebarItem? = .timeline
     @EnvironmentObject private var dataStore: LocalDataStore
     @EnvironmentObject private var viewModel: ActivityViewModel
+    @StateObject private var accessibilityReader = AccessibilityReader.shared
+    @StateObject private var idleMonitor = IdleMonitor.shared
     @State private var showingOnboardingFlow: Bool = false
 
     var body: some View {
@@ -136,9 +138,51 @@ struct TimelineView: View {
             if viewModel.showingOnboarding {
                 OnboardingCardView()
             }
+            
+            if !accessibilityReader.isTrusted {
+                AccessibilityPermissionBanner()
+                    .environmentObject(accessibilityReader)
+            }
 
             searchBar
             dateRangePicker
+
+            if !viewModel.events.isEmpty && !viewModel.rangeEnabled {
+                VisualTimelineView()
+                    .frame(height: 120) // Fixed height for now, adjust given zoom
+                    .environmentObject(dataStore)
+                    .environmentObject(viewModel)
+                    .padding(.bottom, 8)
+            }
+
+            if case .unavailable(let message) = viewModel.aiAvailability {
+                Text("Apple Intelligence unavailable: \(message)")
+                    .font(.footnote)
+                    .foregroundColor(.secondary)
+            }
+        }
+        .onChange(of: accessibilityReader.isTrusted) { trusted, _ in
+            if trusted {
+                accessibilityReader.startPolling(dataStore: dataStore)
+            } else {
+                accessibilityReader.stopPolling()
+            }
+        }
+        .onAppear {
+            if accessibilityReader.isTrusted {
+                accessibilityReader.startPolling(dataStore: dataStore)
+                idleMonitor.startMonitoring(dataStore: dataStore)
+            }
+        }
+        .onChange(of: accessibilityReader.isTrusted) { trusted, _ in
+            if trusted {
+                accessibilityReader.startPolling(dataStore: dataStore)
+                idleMonitor.startMonitoring(dataStore: dataStore)
+            } else {
+                accessibilityReader.stopPolling()
+                idleMonitor.stopMonitoring()
+            }
+        }
 
             if case .unavailable(let message) = viewModel.aiAvailability {
                 Text("Apple Intelligence unavailable: \(message)")
@@ -428,6 +472,30 @@ struct OnboardingCardView: View {
             } catch {
                 // error handling
             }
+        }
+    }
+}
+
+struct AccessibilityPermissionBanner: View {
+    @EnvironmentObject var reader: AccessibilityReader
+    
+    var body: some View {
+        GroupBox("Enable Window Title Tracking") {
+            VStack(alignment: .leading, spacing: 8) {
+                Text("Judge Chronos needs Accessibility permissions to track window titles.")
+                Text("This allows us to distinguish between 'Chrome - Facebook' and 'Chrome - Work Docs'.")
+                    .foregroundColor(.secondary)
+                
+                HStack {
+                    Button("Grant Permission") {
+                        reader.promptForPermissions()
+                    }
+                    Button("Check Again") {
+                        reader.checkPermissions()
+                    }
+                }
+            }
+            .frame(maxWidth: .infinity, alignment: .leading)
         }
     }
 }
@@ -746,6 +814,26 @@ struct DailyReviewView: View {
 
     var body: some View {
         VStack(alignment: .leading, spacing: 12) {
+             // New AI Summary Section
+            GroupBox {
+                VStack(alignment: .leading, spacing: 4) {
+                    Text("Daily Summary")
+                        .font(.headline)
+                    if events.isEmpty {
+                        Text("No activity yet.")
+                            .foregroundColor(.secondary)
+                    } else {
+                        Text(SummaryService.shared.generateDailyRecap(events: events, dataStore: dataStore))
+                            .font(.system(size: 13))
+                            .textSelection(.enabled)
+                            .lineLimit(6)
+                    }
+                }
+                .frame(maxWidth: .infinity, alignment: .leading)
+            }
+            .padding(.horizontal, 4)
+            .padding(.top, 4)
+
             HStack {
                 Text("Daily Review")
                     .font(.title2)

@@ -2,11 +2,13 @@ import SwiftUI
 
 @main
 struct Judge_ChronosApp: App {
-    @StateObject private var dataStore: LocalDataStore
-    @StateObject private var viewModel: ActivityViewModel
+    @StateObject private var dataStore = LocalDataStore.shared
+    @StateObject private var viewModel = ActivityViewModel()
 
     init() {
-        let store = LocalDataStore()
+        let store = LocalDataStore.shared
+        // In SwiftUI App lifecycle, StateObject init is tricky if trying to inject self.
+        // But here we just use the shared instance.
         _dataStore = StateObject(wrappedValue: store)
         _viewModel = StateObject(wrappedValue: ActivityViewModel(dataStore: store))
 
@@ -26,11 +28,31 @@ struct Judge_ChronosApp: App {
                 .environmentObject(dataStore)
                 .environmentObject(viewModel)
         }
+        .commands {
+            CommandGroup(replacing: .appInfo) {
+                Button("About Judge Chronos") {
+                    openAboutWindow()
+                }
+            }
+        }
         MenuBarExtra("Judge Chronos", systemImage: "hourglass") {
             MenuBarView()
                 .environmentObject(dataStore)
                 .environmentObject(viewModel)
         }
+    }
+    
+    private func openAboutWindow() {
+        let aboutWindow = NSWindow(
+            contentRect: NSRect(x: 0, y: 0, width: 300, height: 300),
+            styleMask: [.titled, .closable, .miniaturizable],
+            backing: .buffered,
+            defer: false
+        )
+        aboutWindow.title = "About Judge Chronos"
+        aboutWindow.center()
+        aboutWindow.contentView = NSHostingView(rootView: AboutView())
+        aboutWindow.makeKeyAndOrderFront(nil)
     }
 }
 
