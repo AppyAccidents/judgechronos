@@ -25,7 +25,7 @@ final class CalendarService {
             let granted = try await store.requestFullAccessToEvents()
             if !granted { throw CalendarServiceError.accessDenied }
         } else {
-            let granted = try await withCheckedThrowingContinuation { continuation in
+            let granted = try await withCheckedThrowingContinuation { (continuation: CheckedContinuation<Bool, Error>) in
                 store.requestAccess(to: .event) { allowed, error in
                     if let error {
                         continuation.resume(throwing: error)

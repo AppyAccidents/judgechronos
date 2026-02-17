@@ -12,6 +12,7 @@ final class DataExporter {
     // Schema version for future migration support
     private let currentSchemaVersion = 1
     
+    @MainActor
     func exportAllData(from dataStore: LocalDataStore) throws -> Data {
         // Create container with metadata
         let container = ExportContainer(

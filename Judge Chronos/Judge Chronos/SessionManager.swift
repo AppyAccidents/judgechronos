@@ -75,7 +75,7 @@ final class SessionManager {
     func updateSessions(_ sessions: inout [Session], with newRawEvents: [RawEvent], rules: [Rule]) -> [RuleMatch] {
         // 1. Sort new events
         let sortedNew = newRawEvents.sorted { $0.timestamp < $1.timestamp }
-        guard !sortedNew.isEmpty else { return }
+        guard !sortedNew.isEmpty else { return [] }
         
         // 2. Try to merge first new event into the last existing session
         var remainingEvents = sortedNew
@@ -100,7 +100,7 @@ final class SessionManager {
         }
         
         // 3. Derive new sessions from remaining events
-        var newSessions = deriveSessions(from: remainingEvents)
+        let newSessions = deriveSessions(from: remainingEvents)
         
         // 4. Update the input sessions
         sessions.append(contentsOf: newSessions)

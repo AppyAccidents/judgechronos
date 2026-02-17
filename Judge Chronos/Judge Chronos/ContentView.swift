@@ -50,8 +50,6 @@ struct ContentView: View {
     @State private var selection: SidebarItem? = .timeline
     @EnvironmentObject private var dataStore: LocalDataStore
     @EnvironmentObject private var viewModel: ActivityViewModel
-    @StateObject private var accessibilityReader = AccessibilityReader.shared
-    @StateObject private var idleMonitor = IdleMonitor.shared
     @State private var showingOnboardingFlow: Bool = false
 
     var body: some View {
@@ -76,6 +74,7 @@ struct ContentView: View {
             }
         }
         .frame(minWidth: 980, minHeight: 640)
+        .background(AppTheme.Colors.background.ignoresSafeArea())
         .sheet(isPresented: $showingOnboardingFlow) {
             OnboardingFlowView(isPresented: $showingOnboardingFlow)
                 .environmentObject(dataStore)
@@ -91,6 +90,8 @@ struct ContentView: View {
 struct TimelineView: View {
     @EnvironmentObject private var viewModel: ActivityViewModel
     @EnvironmentObject private var dataStore: LocalDataStore
+    @StateObject private var accessibilityReader = AccessibilityReader.shared
+    @StateObject private var idleMonitor = IdleMonitor.shared
     @State private var searchText: String = ""
     @State private var showingDailyReview: Bool = false
     @State private var showingFocusSession: Bool = false
@@ -138,7 +139,7 @@ struct TimelineView: View {
             if viewModel.showingOnboarding {
                 OnboardingCardView()
             }
-            
+
             if !accessibilityReader.isTrusted {
                 AccessibilityPermissionBanner()
                     .environmentObject(accessibilityReader)
@@ -149,7 +150,7 @@ struct TimelineView: View {
 
             if !viewModel.events.isEmpty && !viewModel.rangeEnabled {
                 VisualTimelineView()
-                    .frame(height: 120) // Fixed height for now, adjust given zoom
+                    .frame(height: 120)
                     .environmentObject(dataStore)
                     .environmentObject(viewModel)
                     .padding(.bottom, 8)
@@ -160,19 +161,8 @@ struct TimelineView: View {
                     .font(.footnote)
                     .foregroundColor(.secondary)
             }
-        }
-        .onChange(of: accessibilityReader.isTrusted) { trusted, _ in
-            if trusted {
-                accessibilityReader.startPolling(dataStore: dataStore)
-            } else {
-                accessibilityReader.stopPolling()
-            }
-        }
-        .onAppear {
-            if accessibilityReader.isTrusted {
-                accessibilityReader.startPolling(dataStore: dataStore)
-                idleMonitor.startMonitoring(dataStore: dataStore)
-            }
+
+            timelineList
         }
         .onChange(of: accessibilityReader.isTrusted) { trusted, _ in
             if trusted {
@@ -181,41 +171,6 @@ struct TimelineView: View {
             } else {
                 accessibilityReader.stopPolling()
                 idleMonitor.stopMonitoring()
-            }
-        }
-
-            if case .unavailable(let message) = viewModel.aiAvailability {
-                Text("Apple Intelligence unavailable: \(message)")
-                    .font(.footnote)
-                    .foregroundColor(.secondary)
-            }
-
-            if viewModel.isLoading {
-                ProgressView("Loading activity...")
-                    .padding(.top, 12)
-            } else if let error = viewModel.errorMessage {
-                Text(error)
-                    .foregroundColor(.red)
-                    .padding(.top, 8)
-            } else if viewModel.events.isEmpty {
-                EmptyStateView()
-                    .padding(.top, 8)
-            } else {
-                List {
-                    ForEach(groupedByDay, id: \.0) { day, eventsForDay in
-                        Section(header: dayHeader(for: day)) {
-                            ForEach(groupedByTask(eventsForDay), id: \.0) { groupKey, events in
-                                VStack(alignment: .leading, spacing: 6) {
-                                    sectionHeader(for: groupKey, events: events)
-                                    ForEach(events) { event in
-                                        TimelineRow(event: event)
-                                    }
-                                }
-                                .padding(.vertical, 4)
-                            }
-                        }
-                    }
-                }
             }
         }
         .padding()
@@ -244,12 +199,16 @@ struct TimelineView: View {
         .onAppear {
             viewModel.refresh()
             viewModel.refreshAIAvailability()
+            if accessibilityReader.isTrusted {
+                accessibilityReader.startPolling(dataStore: dataStore)
+                idleMonitor.startMonitoring(dataStore: dataStore)
+            }
         }
         .onReceive(dataStore.objectWillChange) { _ in
             viewModel.reapplyCategories()
         }
         .sheet(isPresented: $showingDailyReview) {
-            DailyReviewView(events: viewModel.events, isPresented: $showingDailyReview)
+            DailyReviewView(isPresented: $showingDailyReview, events: viewModel.events)
                 .environmentObject(dataStore)
                 .environmentObject(viewModel)
         }
@@ -306,6 +265,37 @@ struct TimelineView: View {
             return true
         }
         return false
+    }
+
+    @ViewBuilder
+    private var timelineList: some View {
+        if viewModel.isLoading {
+            ProgressView("Loading activity...")
+                .padding(.top, 12)
+        } else if let error = viewModel.errorMessage {
+            Text(error)
+                .foregroundColor(AppTheme.Colors.statusError)
+                .padding(.top, 8)
+        } else if viewModel.events.isEmpty {
+            EmptyStateView()
+                .padding(.top, 8)
+        } else {
+            List {
+                ForEach(groupedByDay, id: \.0) { day, eventsForDay in
+                    Section(header: dayHeader(for: day)) {
+                        ForEach(groupedByTask(eventsForDay), id: \.0) { groupKey, events in
+                            VStack(alignment: .leading, spacing: 6) {
+                                sectionHeader(for: groupKey, events: events)
+                                ForEach(events) { event in
+                                    TimelineRow(event: event)
+                                }
+                            }
+                            .padding(.vertical, 4)
+                        }
+                    }
+                }
+            }
+        }
     }
 
     private func sectionHeader(for groupKey: ActivityGroupKey, events: [ActivityEvent]) -> some View {
@@ -404,10 +394,10 @@ struct StatusHeaderView: View {
     }
 
     private var statusColor: Color {
-        if dataStore.preferences.privateModeEnabled { return .orange }
-        if viewModel.showingOnboarding { return .orange }
-        if viewModel.errorMessage != nil { return .red }
-        return .green
+        if dataStore.preferences.privateModeEnabled { return AppTheme.Colors.statusWarning }
+        if viewModel.showingOnboarding { return AppTheme.Colors.statusWarning }
+        if viewModel.errorMessage != nil { return AppTheme.Colors.statusError }
+        return AppTheme.Colors.statusReady
     }
 }
 
@@ -421,7 +411,7 @@ struct PrivateModeBannerView: View {
         .font(.subheadline)
         .foregroundColor(.secondary)
         .padding(10)
-        .background(Color.orange.opacity(0.12))
+        .background(AppTheme.Colors.warning.opacity(0.12))
         .cornerRadius(8)
     }
 }
@@ -456,24 +446,6 @@ struct OnboardingCardView: View {
         NSWorkspace.shared.activateFileViewerSelecting([Bundle.main.bundleURL])
     }
 
-    private func exportJSON() {
-        let panel = NSSavePanel()
-        panel.allowedContentTypes = [UTType.json]
-        let formatter = DateFormatter()
-        formatter.dateFormat = "yyyy-MM-dd"
-        let dateString = formatter.string(from: Date())
-        panel.nameFieldStringValue = "judge-chronos-backup-\(dateString).json"
-        panel.canCreateDirectories = true
-        panel.begin { result in
-            guard result == .OK, let url = panel.url else { return }
-            do {
-                let data = try viewModel.exportData()
-                try data.write(to: url, options: [.atomic])
-            } catch {
-                // error handling
-            }
-        }
-    }
 }
 
 struct AccessibilityPermissionBanner: View {
@@ -536,7 +508,7 @@ struct OnboardingFlowView: View {
                 categoriesStep
                     .tag(2)
             }
-            .tabViewStyle(.page)
+            .tabViewStyle(.automatic)
 
             HStack {
                 Button("Back") {
@@ -653,7 +625,7 @@ struct OnboardingFlowView: View {
             prefs.hasCompletedOnboarding = true
         }
         for name in selectedCategories {
-            _ = dataStore.addCategoryIfNeeded(name: name, color: .blue)
+            _ = dataStore.addCategoryIfNeeded(name: name, color: AppTheme.Colors.primary)
         }
     }
 
@@ -669,6 +641,7 @@ struct OnboardingFlowView: View {
         formatter.dateFormat = "HH:mm"
         return formatter
     }
+
 }
 
 struct TimelineRow: View {
@@ -713,7 +686,7 @@ struct TimelineRow: View {
                            let rule = dataStore.rules.first(where: { $0.id == match.ruleId }) {
                             Text("Matched: \(rule.name)")
                                 .font(.footnote)
-                                .foregroundColor(.blue)
+                                .foregroundColor(AppTheme.Colors.primary)
                                 .help("Applied via '\(rule.name)' because it matched \(match.appliedChanges)")
                         } else if let ruleCategory = ruleCategory {
                             Text("Auto: \(dataStore.categoryName(for: ruleCategory))")
@@ -824,7 +797,7 @@ struct DailyReviewView: View {
                             .foregroundColor(.secondary)
                     } else {
                         Text(SummaryService.shared.generateDailyRecap(events: events, dataStore: dataStore))
-                            .font(.system(size: 13))
+                            .font(.system(size: 13, weight: .regular, design: .monospaced))
                             .textSelection(.enabled)
                             .lineLimit(6)
                     }
@@ -942,7 +915,7 @@ struct CategoriesView: View {
     @EnvironmentObject private var dataStore: LocalDataStore
     @EnvironmentObject private var viewModel: ActivityViewModel
     @State private var newCategoryName: String = ""
-    @State private var newCategoryColor: Color = .blue
+    @State private var newCategoryColor: Color = AppTheme.Colors.primary
 
     var body: some View {
         List {
@@ -953,7 +926,7 @@ struct CategoriesView: View {
                     guard !newCategoryName.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty else { return }
                     dataStore.addCategory(name: newCategoryName, color: newCategoryColor)
                     newCategoryName = ""
-                    newCategoryColor = .blue
+                    newCategoryColor = AppTheme.Colors.primary
                 }
             }
 
@@ -1031,7 +1004,7 @@ struct CategoryRow: View {
     init(category: Category) {
         self.category = category
         _name = State(initialValue: category.name)
-        _color = State(initialValue: Color(hex: category.colorHex) ?? .blue)
+        _color = State(initialValue: Color(hex: category.colorHex) ?? AppTheme.Colors.primary)
     }
 
     var body: some View {
@@ -1096,7 +1069,7 @@ struct RulesView: View {
                                     .font(.headline)
                                 if rule.markAsPrivate {
                                     Image(systemName: "eye.slash")
-                                        .foregroundColor(.orange)
+                                        .foregroundColor(AppTheme.Colors.secondary)
                                 }
                                 Spacer()
                                 Text("P\(rule.priority)")
@@ -1110,7 +1083,7 @@ struct RulesView: View {
                                 .foregroundColor(.secondary)
                             Text(dataStore.categoryName(for: rule.targetCategoryId))
                                 .font(.footnote)
-                                .foregroundColor(.blue)
+                                .foregroundColor(AppTheme.Colors.primary)
                         }
                     }
                     .onDelete { indexSet in
@@ -1626,6 +1599,25 @@ struct SettingsView: View {
         formatter.dateFormat = "HH:mm"
         return formatter
     }
+
+    private func exportJSON() {
+        let panel = NSSavePanel()
+        panel.allowedContentTypes = [.json]
+        let formatter = DateFormatter()
+        formatter.dateFormat = "yyyy-MM-dd"
+        let dateString = formatter.string(from: Date())
+        panel.nameFieldStringValue = "judge-chronos-backup-\(dateString).json"
+        panel.canCreateDirectories = true
+        panel.begin { result in
+            guard result == .OK, let url = panel.url else { return }
+            do {
+                let data = try viewModel.exportData()
+                try data.write(to: url, options: [.atomic])
+            } catch {
+                // error handling
+            }
+        }
+    }
 }
 
 struct AIStatusView: View {
@@ -1635,11 +1627,11 @@ struct AIStatusView: View {
         switch viewModel.aiAvailability {
         case .available:
             Label("Apple Intelligence available", systemImage: "checkmark.seal")
-                .foregroundColor(.green)
+                .foregroundColor(AppTheme.Colors.statusReady)
         case .unavailable(let message):
             VStack(alignment: .leading, spacing: 4) {
                 Label("Apple Intelligence unavailable", systemImage: "exclamationmark.triangle")
-                    .foregroundColor(.orange)
+                    .foregroundColor(AppTheme.Colors.statusWarning)
                 Text(message)
                     .foregroundColor(.secondary)
                     .font(.footnote)

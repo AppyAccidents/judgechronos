@@ -1,9 +1,10 @@
 import Foundation
-import SQLite
+import SQLite3
 
 enum KnowledgeCReaderError: Error {
-    case databaseNotFound
-    case permissionDenied
+    case databaseNotFound(searchedPaths: [String])
+    case permissionDenied(path: String?)
+    case databaseUnreadable(path: String, underlying: Error)
     case queryFailed(Error)
 }
 
@@ -13,18 +14,41 @@ final class KnowledgeCReader {
     // CoreBiome uses a different reference date (Jan 1 2001)
     static let macAbsoluteTimeIntervalSince1970: TimeInterval = 978307200
     
-    private var databasePath: String {
-        let home = NSHomeDirectory()
-        return home + "/Library/Application Support/Knowledge/knowledgeC.db"
+    private let locator = KnowledgeCDatabaseLocator()
+
+    private static func isPermissionDenied(_ error: Error) -> Bool {
+        let lowercased = error.localizedDescription.lowercased()
+        return lowercased.contains("authorization")
+            || lowercased.contains("permission")
+            || lowercased.contains("not authorized")
+            || lowercased.contains("operation not permitted")
     }
     
     func fetchEvents(since lastImport: Date?) throws -> [RawEvent] {
-        guard FileManager.default.fileExists(atPath: databasePath) else {
-            throw KnowledgeCReaderError.databaseNotFound
-        }
+        let resolved = locator.resolve()
+        let databasePath = resolved.path
         
         do {
-            let db = try Connection(databasePath, readonly: true)
+            var db: OpaquePointer?
+            guard sqlite3_open_v2(databasePath, &db, SQLITE_OPEN_READONLY, nil) == SQLITE_OK, let db else {
+                let errorText = String(cString: sqlite3_errmsg(db))
+                if errorText.localizedCaseInsensitiveContains("no such file") {
+                    throw KnowledgeCReaderError.databaseNotFound(searchedPaths: resolved.searchedPaths)
+                }
+                if errorText.localizedCaseInsensitiveContains("not authorized")
+                    || errorText.localizedCaseInsensitiveContains("authorization denied")
+                    || errorText.localizedCaseInsensitiveContains("operation not permitted")
+                    || errorText.localizedCaseInsensitiveContains("permission denied") {
+                    throw KnowledgeCReaderError.permissionDenied(path: databasePath)
+                }
+                throw KnowledgeCReaderError.databaseUnreadable(
+                    path: databasePath,
+                    underlying: NSError(domain: "KnowledgeCReader", code: Int(sqlite3_errcode(db)), userInfo: [
+                        NSLocalizedDescriptionKey: errorText
+                    ])
+                )
+            }
+            defer { sqlite3_close(db) }
             
             // CoreBiome/KnowledgeC query
             // ZOBJECT: Main table
@@ -32,61 +56,89 @@ final class KnowledgeCReader {
             // ZSTARTDATE: timestamp
             
             var query = """
-            SELECT ZVALUESTRING, ZSTARTDATE, ZENDDATE
+            SELECT CAST(ZVALUESTRING AS TEXT), CAST(ZSTARTDATE AS REAL), CAST(ZENDDATE AS REAL)
             FROM ZOBJECT
             WHERE ZSTREAMNAME = '/app/usage'
             """
-            
-            var params: [Binding?] = []
-            
-            if let lastImport = lastImport {
+
+            if lastImport != nil {
                 query += " AND ZSTARTDATE > ?"
-                let macTime = lastImport.timeIntervalSince1970 - Self.macAbsoluteTimeIntervalSince1970
-                params.append(macTime)
             }
-            
             query += " ORDER BY ZSTARTDATE ASC"
-            
+
             var events: [RawEvent] = []
+            var scannedRows = 0
             let importedAt = Date()
-            
-            for row in try db.prepare(query, params) {
-                guard let appName = row[0] as? String,
-                      let startVal = row[1] as? Double,
-                      let endVal = row[2] as? Double else { continue }
-                
+            var statement: OpaquePointer?
+            guard sqlite3_prepare_v2(db, query, -1, &statement, nil) == SQLITE_OK, let statement else {
+                throw NSError(domain: "KnowledgeCReader", code: Int(sqlite3_errcode(db)), userInfo: [
+                    NSLocalizedDescriptionKey: String(cString: sqlite3_errmsg(db))
+                ])
+            }
+            defer { sqlite3_finalize(statement) }
+
+            if let lastImport {
+                let macTime = lastImport.timeIntervalSince1970 - Self.macAbsoluteTimeIntervalSince1970
+                sqlite3_bind_double(statement, 1, macTime)
+            }
+
+            while sqlite3_step(statement) == SQLITE_ROW {
+                scannedRows += 1
+                guard let appNamePtr = sqlite3_column_text(statement, 0) else { continue }
+                let appName = String(cString: appNamePtr)
+                guard !appName.isEmpty else { continue }
+
+                let startVal = sqlite3_column_double(statement, 1)
+                let endVal = sqlite3_column_double(statement, 2)
+                if scannedRows <= 3 {
+                    print("KnowledgeCReader sample row \(scannedRows): app=\(appName), start=\(startVal), end=\(endVal)")
+                }
+                let duration = max(0, endVal - startVal)
+                guard duration > 0 else { continue }
+
                 let start = Self.macAbsoluteToDate(startVal)
                 let end = Self.macAbsoluteToDate(endVal)
-                let duration = max(0, endVal - startVal)
-                
-                guard duration > 0 else { continue }
-                
-                // Deduplication Hash: Start + End + AppName
                 let metadata = "\(Int(start.timeIntervalSince1970))|\(Int(end.timeIntervalSince1970))|\(appName)"
-                let hash = String(metadata.hashValue) // fast simple hash for now
-                
-                let event = RawEvent(
-                    id: UUID(),
-                    timestamp: start,
-                    duration: duration,
-                    bundleId: nil, // Bundle ID is often in ZCREATIONDATE or other joined tables, keeping simple for now
-                    appName: appName,
-                    windowTitle: nil, // Not available in basic knowledgeC /app/usage
-                    source: .appUsage,
-                    metadataHash: hash,
-                    importedAt: importedAt
+                let hash = String(metadata.hashValue)
+
+                events.append(
+                    RawEvent(
+                        id: UUID(),
+                        timestamp: start,
+                        duration: duration,
+                        bundleId: nil,
+                        appName: appName,
+                        windowTitle: nil,
+                        source: .appUsage,
+                        metadataHash: hash,
+                        importedAt: importedAt
+                    )
                 )
-                
-                events.append(event)
+            }
+
+            if sqlite3_errcode(db) != SQLITE_OK && sqlite3_errcode(db) != SQLITE_DONE {
+                throw NSError(domain: "KnowledgeCReader", code: Int(sqlite3_errcode(db)), userInfo: [
+                    NSLocalizedDescriptionKey: String(cString: sqlite3_errmsg(db))
+                ])
+            }
+
+            if scannedRows > 0, events.isEmpty {
+                print("KnowledgeCReader: scanned \(scannedRows) rows but produced 0 events. Check timestamp decoding/schema types.")
             }
             
             return events
             
         } catch {
+            if let known = error as? KnowledgeCReaderError {
+                throw known
+            }
             print("KnowledgeCReader error: \(error)")
-            // If we can't open permissions, it's likely Full Disk Access
-            if error.localizedDescription.contains("authorization") || error.localizedDescription.contains("permission") {
-                throw KnowledgeCReaderError.permissionDenied
+            if Self.isPermissionDenied(error) {
+                throw KnowledgeCReaderError.permissionDenied(path: databasePath)
+            }
+            if error.localizedDescription.localizedCaseInsensitiveContains("unable to open database file")
+                || error.localizedDescription.localizedCaseInsensitiveContains("open(") {
+                throw KnowledgeCReaderError.databaseUnreadable(path: databasePath, underlying: error)
             }
             throw KnowledgeCReaderError.queryFailed(error)
         }
@@ -94,5 +146,35 @@ final class KnowledgeCReader {
     
     static func macAbsoluteToDate(_ value: Double) -> Date {
         Date(timeIntervalSince1970: value + macAbsoluteTimeIntervalSince1970)
+    }
+
+    static func toTimeInterval(_ value: Any?) -> Double? {
+        guard let value else { return nil }
+        if let numeric = value as? Double { return numeric }
+        if let numeric = value as? Int64 { return Double(numeric) }
+        if let numeric = value as? Int { return Double(numeric) }
+        if let numeric = value as? NSNumber { return numeric.doubleValue }
+        return nil
+    }
+}
+
+private struct KnowledgeCDatabaseLocator {
+    private let relativePath = "Library/Application Support/Knowledge/knowledgeC.db"
+
+    func resolve() -> (path: String, searchedPaths: [String]) {
+        let fileManager = FileManager.default
+        let homeDirectoryPath = fileManager.homeDirectoryForCurrentUser.path
+        let candidates = [
+            URL(fileURLWithPath: homeDirectoryPath).appendingPathComponent(relativePath).path,
+            NSHomeDirectory() + "/\(relativePath)"
+        ]
+        var searchedPaths: [String] = []
+        for path in candidates {
+            if searchedPaths.contains(path) {
+                continue
+            }
+            searchedPaths.append(path)
+        }
+        return (searchedPaths.first ?? URL(fileURLWithPath: homeDirectoryPath).appendingPathComponent(relativePath).path, searchedPaths)
     }
 }

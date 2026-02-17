@@ -13,7 +13,7 @@ struct EventDetailView: View {
                 // Placeholder icon - in real app, fetch from NSWorkspace
                 Image(systemName: "app")
                     .font(.title2)
-                    .foregroundColor(.blue)
+                    .foregroundColor(AppTheme.Colors.primary)
                 
                 VStack(alignment: .leading) {
                     Text(event.appDisplayName)
@@ -72,7 +72,7 @@ struct EventDetailView: View {
             // Timestamp
             Text("\(Formatting.formatTime(event.startTime)) - \(Formatting.formatTime(event.endTime))")
                 .font(.caption2)
-                .foregroundColor(.tertiaryLabel)
+                .foregroundColor(.secondary)
                 .padding(.top, 4)
         }
         .padding()

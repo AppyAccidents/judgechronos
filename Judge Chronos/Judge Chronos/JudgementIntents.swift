@@ -65,8 +65,8 @@ struct GetDailySummaryIntent: AppIntent {
         
         // MVP: Filter contextEvents or sessions.
         // Wait, `ActivityEvent` comes from `RawEvent` mostly.
-        let relevant = store.rawEvents.filter {
-            $0.startTime >= today && $0.startTime < tomorrow
+        let relevant = store.rawEvents.filter { event in
+            event.timestamp >= today && event.timestamp < tomorrow
         }
         
         // This is "Raw". It lacks "Smart Grouping" or "Rules".
@@ -78,7 +78,7 @@ struct GetDailySummaryIntent: AppIntent {
         // Let's create a helper in Store or Service to Map Raw -> Activity.
         
         // QUICK FIX: Just sum up raw apps.
-        let duration = relevant.reduce(0) { $0 + ($1.endTime.timeIntervalSince($1.startTime)) }
+        let duration = relevant.reduce(0) { $0 + $1.duration }
         let count = relevant.count
         
         return .result(value: "You have recorded \(Formatting.formatDuration(duration)) across \(count) activities today.")
@@ -101,7 +101,7 @@ struct JudgeChronosShortcuts: AppShortcutsProvider {
             intent: GetDailySummaryIntent(),
             phrases: [
                 "Daily Summary in \(.applicationName)",
-                "Check Judge Chronos"
+                "Check \(.applicationName)"
             ],
             shortTitle: "Get Daily Summary",
             systemImageName: "doc.text"

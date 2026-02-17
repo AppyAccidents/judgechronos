@@ -28,7 +28,9 @@ class IdleMonitor: ObservableObject {
     }
     
     private func checkIdleState(dataStore: LocalDataStore) {
-        let timeSinceInput = CGEventSource.secondsSinceLastEventType(.combinedSessionState, eventType: .any)
+        let timeSinceInput = TimeInterval(
+            CGEventSource.secondsSinceLastEventType(.combinedSessionState, eventType: .null)
+        )
         
         let wasIdle = isIdle
         isIdle = timeSinceInput >= idleThreshold

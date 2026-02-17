@@ -57,14 +57,17 @@ class AccessibilityReader: ObservableObject {
         
         // Accessibility API to get window title
         let appRef = AXUIElementCreateApplication(pid)
-        var value: AnyObject?
+        var focusedWindowValue: CFTypeRef?
         
         // Get "FocusedWindow" first
-        if AXUIElementCopyAttributeValue(appRef, kAXFocusedWindowAttribute as CFString, &value) == .success {
-            let windowRef = value as! AXUIElement
+        if AXUIElementCopyAttributeValue(appRef, kAXFocusedWindowAttribute as CFString, &focusedWindowValue) == .success {
+            guard let focusedWindowValue else { return }
+            guard CFGetTypeID(focusedWindowValue) == AXUIElementGetTypeID() else { return }
+            let windowRef = unsafeBitCast(focusedWindowValue, to: AXUIElement.self)
+            var titleValue: CFTypeRef?
             // Get "Title" of that window
-            if AXUIElementCopyAttributeValue(windowRef, kAXTitleAttribute as CFString, &value) == .success,
-               let title = value as? String, !title.isEmpty {
+            if AXUIElementCopyAttributeValue(windowRef, kAXTitleAttribute as CFString, &titleValue) == .success,
+               let title = titleValue as? String, !title.isEmpty {
                 windowTitle = title
             }
         }

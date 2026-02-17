@@ -1,4 +1,5 @@
 import Foundation
+import SwiftUI
 
 @MainActor
 final class ActivityViewModel: ObservableObject {
@@ -56,10 +57,9 @@ final class ActivityViewModel: ObservableObject {
             return
         }
         do {
-        do {
             // Trigger incremental import first
             try await dataStore.performIncrementalImport()
-            
+
             var rawEvents: [ActivityEvent]
             if rangeEnabled {
                 let normalized = normalizedRange()
@@ -76,18 +76,37 @@ final class ActivityViewModel: ObservableObject {
                 )
                 rawEvents.append(contentsOf: calendarEvents)
             }
-            errorMessage = nil
+            if rawEvents.isEmpty, dataStore.rawEvents.isEmpty, dataStore.sessions.isEmpty {
+                errorMessage = "No sessions imported yet. Press Refresh after granting Full Disk Access."
+            } else {
+                errorMessage = nil
+            }
             showingOnboarding = false
             let filtered = rawEvents.filter { !dataStore.isExcluded(appName: $0.appName) }
             let withIdle = insertIdleEvents(into: filtered)
             events = dataStore.applyCategories(to: withIdle)
             pruneSuggestions()
             lastRefresh = Date()
-            pruneSuggestions()
-            lastRefresh = Date()
-        } catch KnowledgeCReaderError.permissionDenied {
+        } catch KnowledgeCReaderError.databaseNotFound(let searchedPaths) {
+            print("Knowledge database not found in paths: \(searchedPaths)")
             showingOnboarding = true
-            errorMessage = "Full Disk Access is required to read activity data."
+            errorMessage = "Knowledge database not found yet. macOS may not have recorded usage or Full Disk Access is missing."
+            events = []
+        } catch KnowledgeCReaderError.permissionDenied(let path) {
+            if let path {
+                print("Knowledge database permission denied at path: \(path)")
+            }
+            showingOnboarding = true
+            errorMessage = "Grant Full Disk Access and relaunch Judge Chronos."
+            events = []
+        } catch KnowledgeCReaderError.databaseUnreadable(let path, let error) {
+            print("Knowledge database unreadable at path \(path): \(error)")
+            showingOnboarding = true
+            errorMessage = "Could not open the Knowledge database. Check Full Disk Access, then relaunch."
+            events = []
+        } catch KnowledgeCReaderError.queryFailed(let error) {
+            showingOnboarding = false
+            errorMessage = "Failed to parse activity data: \(error.localizedDescription)"
             events = []
         } catch {
             showingOnboarding = false
@@ -106,8 +125,11 @@ final class ActivityViewModel: ObservableObject {
     }
 
     func updateCategory(for event: ActivityEvent, categoryId: UUID?) {
-        // Phase 2: Update Session
-        dataStore.updateSessionCategory(sessionId: event.id, categoryId: categoryId)
+        if dataStore.sessions.contains(where: { $0.id == event.id }) {
+            dataStore.updateSessionCategory(sessionId: event.id, categoryId: categoryId)
+        } else {
+            dataStore.assignCategory(appName: event.appName, categoryId: categoryId)
+        }
         events = dataStore.applyCategories(to: events)
     }
 
@@ -181,7 +203,7 @@ final class ActivityViewModel: ObservableObject {
         guard let suggestion = suggestions[event.eventKey] else { return }
         let trimmed = suggestion.category.trimmingCharacters(in: .whitespacesAndNewlines)
         guard !trimmed.isEmpty else { return }
-        let id = dataStore.addCategoryIfNeeded(name: trimmed, color: .blue)
+        let id = dataStore.addCategoryIfNeeded(name: trimmed, color: AppTheme.Colors.primary)
         updateCategory(for: event, categoryId: id)
         suggestions.removeValue(forKey: event.eventKey)
     }
@@ -213,7 +235,7 @@ final class ActivityViewModel: ObservableObject {
     }
 
     func applyCategorySuggestion(_ name: String) {
-        _ = dataStore.addCategoryIfNeeded(name: name, color: .blue)
+        _ = dataStore.addCategoryIfNeeded(name: name, color: AppTheme.Colors.primary)
         categorySuggestions.removeAll { $0 == name }
     }
 
@@ -270,7 +292,7 @@ final class ActivityViewModel: ObservableObject {
         guard let endInclusive = Calendar.current.date(byAdding: .day, value: 1, to: endOfDay) else {
             return []
         }
-        let meetingsCategoryId = dataStore.addCategoryIfNeeded(name: "Meetings", color: .orange)
+        let meetingsCategoryId = dataStore.addCategoryIfNeeded(name: "Meetings", color: AppTheme.Colors.secondary)
         let events = try calendarService.fetchEvents(from: startOfDay, to: endInclusive)
         return events.map { event in
             let title = event.title?.trimmingCharacters(in: .whitespacesAndNewlines)
@@ -308,7 +330,7 @@ final class ActivityViewModel: ObservableObject {
     }
 }
 
-struct WeeklyRecap: Equatable {
+struct WeeklyRecap {
     let startDate: Date
     let endDate: Date
     let topCategories: [(UUID?, Int)]

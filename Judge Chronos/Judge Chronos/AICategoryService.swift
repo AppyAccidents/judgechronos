@@ -51,7 +51,7 @@ final class AICategoryService: AICategoryServiceType {
             Duration minutes: \(Int(event.duration / 60))
             """
         }
-        let suggestion = response.value
+        let suggestion = response.content
         return AISuggestion(category: suggestion.category, rationale: suggestion.rationale)
     }
 
@@ -63,7 +63,7 @@ final class AICategoryService: AICategoryServiceType {
             Apps: \(appNames)
             """
         }
-        let list = response.value
+        let list = response.content
         return list.categories
     }
 }
@@ -96,4 +96,3 @@ final class AICategoryService: AICategoryServiceType {
     }
 }
 #endif
-

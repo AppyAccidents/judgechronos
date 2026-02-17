@@ -246,7 +246,7 @@ final class LocalDataStore: ObservableObject {
         return categories.first(where: { $0.name.trimmingCharacters(in: .whitespacesAndNewlines).lowercased() == normalized })?.id
     }
 
-    func addCategoryIfNeeded(name: String, color: Color = .blue) -> UUID {
+    func addCategoryIfNeeded(name: String, color: Color = AppTheme.Colors.primary) -> UUID {
         let trimmed = name.trimmingCharacters(in: .whitespacesAndNewlines)
         if let existing = categoryId(named: trimmed) {
             return existing

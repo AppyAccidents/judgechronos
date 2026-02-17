@@ -2,9 +2,8 @@ import AppKit
 import Foundation
 import SwiftUI
 
-enum ActivityEventSource: String, Hashable {
+enum ActivityEventSource: String, Codable, Hashable {
     case appUsage
-    case calendar
     case calendar
     case idle
 }

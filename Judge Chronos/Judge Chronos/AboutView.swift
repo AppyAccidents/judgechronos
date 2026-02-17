@@ -11,6 +11,7 @@ struct AboutView: View {
                 Text("Judge Chronos")
                     .font(.title)
                     .fontWeight(.bold)
+                    .foregroundColor(AppTheme.Colors.primary)
                 
                 Text("Version 1.0.0 (Alpha)")
                     .font(.body)
@@ -30,5 +31,6 @@ struct AboutView: View {
         }
         .padding(32)
         .frame(width: 300, height: 300)
+        .background(AppTheme.Colors.background)
     }
 }

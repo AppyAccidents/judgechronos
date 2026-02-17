@@ -2,8 +2,9 @@ import SwiftUI
 
 @main
 struct Judge_ChronosApp: App {
-    @StateObject private var dataStore = LocalDataStore.shared
-    @StateObject private var viewModel = ActivityViewModel()
+    @NSApplicationDelegateAdaptor(AppLifecycleDelegate.self) private var appDelegate
+    @StateObject private var dataStore: LocalDataStore
+    @StateObject private var viewModel: ActivityViewModel
 
     init() {
         let store = LocalDataStore.shared
@@ -27,6 +28,7 @@ struct Judge_ChronosApp: App {
             ContentView()
                 .environmentObject(dataStore)
                 .environmentObject(viewModel)
+                .appThemeRoot()
         }
         .commands {
             CommandGroup(replacing: .appInfo) {
@@ -39,6 +41,7 @@ struct Judge_ChronosApp: App {
             MenuBarView()
                 .environmentObject(dataStore)
                 .environmentObject(viewModel)
+                .appThemeRoot()
         }
     }
     
@@ -51,8 +54,14 @@ struct Judge_ChronosApp: App {
         )
         aboutWindow.title = "About Judge Chronos"
         aboutWindow.center()
-        aboutWindow.contentView = NSHostingView(rootView: AboutView())
+        aboutWindow.contentView = NSHostingView(rootView: AboutView().appThemeRoot())
         aboutWindow.makeKeyAndOrderFront(nil)
+    }
+}
+
+final class AppLifecycleDelegate: NSObject, NSApplicationDelegate {
+    func applicationShouldTerminateAfterLastWindowClosed(_ sender: NSApplication) -> Bool {
+        false
     }
 }
 

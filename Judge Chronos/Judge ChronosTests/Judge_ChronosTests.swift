@@ -1,6 +1,8 @@
+import Foundation
 import Testing
 @testable import Judge_Chronos
 
+@MainActor
 struct Judge_ChronosTests {
 
     @Test func macAbsoluteConversion() async throws {
@@ -65,6 +67,32 @@ struct Judge_ChronosTests {
         viewModel.applySuggestion(for: event)
         #expect(store.categories.contains(where: { $0.name == "Focus" }))
         #expect(store.assignmentForEvent(event) != nil)
+    }
+
+    @Test func knowledgeCTimestampDecodingSupportsNumericTypes() async throws {
+        #expect(KnowledgeCReader.toTimeInterval(123.5) == 123.5)
+        #expect(KnowledgeCReader.toTimeInterval(Int64(124)) == 124.0)
+        #expect(KnowledgeCReader.toTimeInterval(125) == 125.0)
+        #expect(KnowledgeCReader.toTimeInterval(NSNumber(value: 126)) == 126.0)
+    }
+
+    @Test func knowledgeCReaderFetchesEventsWhenDatabaseExists() async throws {
+        let dbPath = FileManager.default.homeDirectoryForCurrentUser
+            .appendingPathComponent("Library/Application Support/Knowledge/knowledgeC.db")
+            .path
+        guard FileManager.default.fileExists(atPath: dbPath) else { return }
+        do {
+            let events = try KnowledgeCReader.shared.fetchEvents(since: nil)
+            #expect(events.isEmpty == false)
+        } catch KnowledgeCReaderError.databaseNotFound, KnowledgeCReaderError.permissionDenied, KnowledgeCReaderError.databaseUnreadable {
+            // Full Disk Access may be unavailable in test environment.
+            return
+        } catch KnowledgeCReaderError.queryFailed(let error) {
+            if "\(error)".localizedCaseInsensitiveContains("authorization denied") {
+                return
+            }
+            throw error
+        }
     }
 }
 

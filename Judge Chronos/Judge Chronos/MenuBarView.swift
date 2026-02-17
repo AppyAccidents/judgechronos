@@ -59,7 +59,7 @@ struct MenuBarView: View {
                     VStack(alignment: .trailing) {
                         Text("Focus Mode")
                             .font(.caption)
-                            .foregroundColor(.orange)
+                            .foregroundColor(AppTheme.Colors.secondary)
                         Text(dataStore.categoryName(for: session.categoryId))
                             .font(.headline)
                         Button("Stop") {
@@ -106,11 +106,17 @@ struct MenuBarView: View {
                 }
                 .padding(.vertical, 4)
                 .padding(.horizontal, 8)
-                .background(Color.secondary.opacity(0.1))
+                .background(AppTheme.Colors.subtleSurface)
                 .cornerRadius(6)
             }
 
             Divider()
+
+            if let error = dataSource.lastError {
+                Text(error)
+                    .font(.footnote)
+                    .foregroundColor(AppTheme.Colors.statusWarning)
+            }
 
             Text("Top Apps")
                 .font(.subheadline)
@@ -201,8 +207,8 @@ final class MenuBarDataSource: ObservableObject {
     @Published var currentApp: String?
     @Published var currentAppStart: Date?
     @Published var currentAppIcon: NSImage?
+    @Published var lastError: String?
     
-    private let database = ActivityDatabase()
     private var workspaceObserver: NSObjectProtocol?
 
     init() {
@@ -240,17 +246,23 @@ final class MenuBarDataSource: ObservableObject {
         checkCurrentApp()
         Task {
             guard !dataStore.preferences.privateModeEnabled else {
-                await MainActor.run { events = [] }
+                await MainActor.run {
+                    events = []
+                    lastError = "Private mode is enabled. Activity tracking is paused."
+                }
                 return
             }
             do {
-                var raw = try database.fetchEvents(for: Date())
+                try await dataStore.performIncrementalImport()
+                let startOfDay = Calendar.current.startOfDay(for: Date())
+                let endOfDay = Calendar.current.date(byAdding: .day, value: 1, to: startOfDay) ?? startOfDay.addingTimeInterval(86_400)
+                var raw = dataStore.events(from: startOfDay, to: endOfDay)
                 if dataStore.preferences.calendarIntegrationEnabled, CalendarService.shared.hasAccess {
                     let calendarEvents = try CalendarService.shared.fetchEvents(
-                        from: Calendar.current.startOfDay(for: Date()),
-                        to: Calendar.current.date(byAdding: .day, value: 1, to: Calendar.current.startOfDay(for: Date())) ?? Date()
+                        from: startOfDay,
+                        to: endOfDay
                     )
-                    let meetingsCategoryId = dataStore.addCategoryIfNeeded(name: "Meetings", color: .orange)
+                    let meetingsCategoryId = dataStore.addCategoryIfNeeded(name: "Meetings", color: AppTheme.Colors.secondary)
                     let meetingEvents = calendarEvents.map { event in
                         let title = event.title?.trimmingCharacters(in: .whitespacesAndNewlines)
                         let name = title?.isEmpty == false ? "Meeting — \(title!)" : "Meeting"
@@ -270,9 +282,33 @@ final class MenuBarDataSource: ObservableObject {
                 }
                 let filtered = raw.filter { !dataStore.isExcluded(appName: $0.appName) }
                 let categorized = dataStore.applyCategories(to: filtered)
-                await MainActor.run { events = categorized }
+                await MainActor.run {
+                    events = categorized
+                    if categorized.isEmpty, dataStore.rawEvents.isEmpty, dataStore.sessions.isEmpty {
+                        lastError = "No sessions imported yet. Press Refresh after granting Full Disk Access."
+                    } else {
+                        lastError = nil
+                    }
+                }
+            } catch KnowledgeCReaderError.databaseNotFound(let searchedPaths) {
+                print("Menu bar import: knowledge database not found in paths: \(searchedPaths)")
+                await MainActor.run {
+                    events = []
+                    lastError = "Setup required: grant Full Disk Access, then refresh."
+                }
+            } catch KnowledgeCReaderError.permissionDenied(let path) {
+                if let path {
+                    print("Menu bar import: permission denied for path: \(path)")
+                }
+                await MainActor.run {
+                    events = []
+                    lastError = "Full Disk Access required. Relaunch after granting access."
+                }
             } catch {
-                await MainActor.run { events = [] }
+                await MainActor.run {
+                    events = []
+                    lastError = "Unable to load activity data."
+                }
             }
         }
     }

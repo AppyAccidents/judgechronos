@@ -54,7 +54,7 @@ struct VisualTimelineView: View {
                 .help("Auto-Group Context Switches")
             }
             .padding()
-            .background(Color(nsColor: .controlBackgroundColor))
+            .background(AppTheme.Colors.background.opacity(0.92))
             
             // Timeline Scroll Area
             ScrollView(.horizontal, showsIndicators: true) {
@@ -83,9 +83,10 @@ struct VisualTimelineView: View {
                     .frame(width: 24 * 60 * pixelsPerMinute, height: blockHeight + 20)
                     .padding(.top, rulerHeight)
                     .gesture(
-                        SpatialTapGesture { location in
-                           handleTap(at: location)
-                        }
+                        DragGesture(minimumDistance: 0)
+                            .onEnded { value in
+                                handleTap(at: value.location)
+                            }
                     )
                 }
                 .frame(minWidth: 24 * 60 * pixelsPerMinute)
