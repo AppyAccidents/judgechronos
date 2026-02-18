@@ -1,6 +1,11 @@
 import Foundation
 import SwiftUI
 
+enum SaveUrgency {
+    case immediate
+    case deferred
+}
+
 @MainActor
 final class LocalDataStore: ObservableObject {
     @Published private(set) var categories: [Category] = []
@@ -23,6 +28,13 @@ final class LocalDataStore: ObservableObject {
     @Published var preferences: UserPreferences = .default
 
     private let fileURL: URL
+    private let persistQueue = DispatchQueue(label: "JudgeChronos.LocalDataStore.persist", qos: .utility)
+    private var deferredPersistWorkItem: DispatchWorkItem?
+    private let deferredPersistDelay: TimeInterval = 2.0
+    private var isImporting = false
+    private var lastImportAttempt: Date?
+    private let importThrottleInterval: TimeInterval = 3.0
+    private let maxContextEvents = 2_000
 
     init(fileURL: URL? = nil) {
         if let fileURL {
@@ -67,54 +79,64 @@ final class LocalDataStore: ObservableObject {
             ruleMatches = []
             contextEvents = []
             preferences = .default
-            save()
+            persist(.immediate)
         }
     }
 
     func save() {
-        do {
-            let containerURL = fileURL.deletingLastPathComponent()
-            try FileManager.default.createDirectory(at: containerURL, withIntermediateDirectories: true, attributes: nil)
-            let payload = LocalData(
-                categories: categories,
-                rules: rules,
-                assignments: assignments,
-                exclusions: exclusions,
-                focusSessions: focusSessions,
-                goals: goals,
-                preferences: preferences,
-                rawEvents: rawEvents,
-                sessions: sessions,
-                projects: projects,
-                tags: tags,
-                ruleMatches: ruleMatches,
-                contextEvents: contextEvents
-            )
-            let data = try JSONEncoder().encode(payload)
-            try data.write(to: fileURL, options: [.atomic])
-        } catch {
-            // Keep silent to avoid crashing the app. We'll show errors in the UI when needed.
+        persist(.immediate)
+    }
+
+    func persist(_ urgency: SaveUrgency) {
+        switch urgency {
+        case .immediate:
+            deferredPersistWorkItem?.cancel()
+            deferredPersistWorkItem = nil
+            enqueuePersist(snapshot())
+        case .deferred:
+            deferredPersistWorkItem?.cancel()
+            let workItem = DispatchWorkItem { [weak self] in
+                guard let self else { return }
+                self.enqueuePersist(self.snapshot())
+                self.deferredPersistWorkItem = nil
+            }
+            deferredPersistWorkItem = workItem
+            DispatchQueue.main.asyncAfter(deadline: .now() + deferredPersistDelay, execute: workItem)
+        }
+    }
+
+    private func enqueuePersist(_ payload: LocalData) {
+        let destination = fileURL
+        persistQueue.async {
+            do {
+                let containerURL = destination.deletingLastPathComponent()
+                try FileManager.default.createDirectory(at: containerURL, withIntermediateDirectories: true, attributes: nil)
+                let data = try JSONEncoder().encode(payload)
+                try data.write(to: destination, options: [.atomic])
+            } catch {
+                // Keep silent to avoid crashing the app. We'll show errors in the UI when needed.
+            }
         }
     }
 
     func addCategory(name: String, color: Color) {
         let newCategory = Category(id: UUID(), name: name, colorHex: color.toHex())
         categories.append(newCategory)
-        save()
+        persist(.immediate)
     }
 
     func updateCategory(_ category: Category, name: String, color: Color) {
         guard let index = categories.firstIndex(where: { $0.id == category.id }) else { return }
         categories[index].name = name
         categories[index].colorHex = color.toHex()
-        save()
+        persist(.immediate)
     }
 
     func deleteCategory(_ category: Category) {
         categories.removeAll { $0.id == category.id }
         rules.removeAll { $0.categoryId == category.id }
         assignments = assignments.filter { $0.value != category.id }
-        save()
+        persist(.immediate)
     }
 
     func addRule(name: String, appNamePattern: String?, categoryId: UUID?, priority: Int = 10, markAsPrivate: Bool = false) {
@@ -133,18 +155,18 @@ final class LocalDataStore: ObservableObject {
             markAsPrivate: markAsPrivate
         )
         rules.append(rule)
-        save()
+        persist(.immediate)
     }
 
     func deleteRule(_ rule: Rule) {
         rules.removeAll { $0.id == rule.id }
-        save()
+        persist(.immediate)
     }
 
     func updateRule(_ rule: Rule) {
         guard let index = rules.firstIndex(where: { $0.id == rule.id }) else { return }
         rules[index] = rule
-        save()
+        persist(.immediate)
     }
 
     func addExclusion(pattern: String) {
@@ -152,18 +174,20 @@ final class LocalDataStore: ObservableObject {
         guard !trimmed.isEmpty else { return }
         let rule = ExclusionRule(id: UUID(), pattern: trimmed)
         exclusions.append(rule)
-        save()
+        persist(.immediate)
     }
 
     func deleteExclusion(_ rule: ExclusionRule) {
         exclusions.removeAll { $0.id == rule.id }
-        save()
+        persist(.immediate)
     }
     
     func addContextEvent(_ event: ContextEvent) {
         contextEvents.append(event)
-        // Optional: Prune old events here if needed
-        save()
+        if contextEvents.count > maxContextEvents {
+            contextEvents.removeFirst(contextEvents.count - maxContextEvents)
+        }
+        persist(.deferred)
     }
     
     func addRawEvent(_ event: RawEvent) {
@@ -174,7 +198,7 @@ final class LocalDataStore: ObservableObject {
         if !matches.isEmpty {
             ruleMatches.append(contentsOf: matches)
         }
-        save()
+        persist(.deferred)
     }
 
     func isExcluded(appName: String) -> Bool {
@@ -189,7 +213,7 @@ final class LocalDataStore: ObservableObject {
         } else {
             assignments.removeValue(forKey: appName)
         }
-        save()
+        persist(.immediate)
     }
 
     func assignCategory(eventKey: String, categoryId: UUID?) {
@@ -198,7 +222,7 @@ final class LocalDataStore: ObservableObject {
         } else {
             assignments.removeValue(forKey: eventKey)
         }
-        save()
+        persist(.immediate)
     }
 
     func categoryForEvent(_ event: ActivityEvent) -> UUID? {
@@ -253,7 +277,7 @@ final class LocalDataStore: ObservableObject {
         }
         let newCategory = Category(id: UUID(), name: trimmed, colorHex: color.toHex())
         categories.append(newCategory)
-        save()
+        persist(.immediate)
         return newCategory.id
     }
 
@@ -276,12 +300,12 @@ final class LocalDataStore: ObservableObject {
     func addGoal(categoryId: UUID, minutesPerDay: Int) {
         let newGoal = Goal(id: UUID(), categoryId: categoryId, minutesPerDay: minutesPerDay)
         goals.append(newGoal)
-        save()
+        persist(.immediate)
     }
 
     func deleteGoal(_ goal: Goal) {
         goals.removeAll { $0.id == goal.id }
-        save()
+        persist(.immediate)
     }
 
     func startFocusSession(durationMinutes: Int, categoryId: UUID) {
@@ -289,13 +313,13 @@ final class LocalDataStore: ObservableObject {
         let end = Calendar.current.date(byAdding: .minute, value: durationMinutes, to: start) ?? start.addingTimeInterval(TimeInterval(durationMinutes * 60))
         let session = FocusSession(id: UUID(), startTime: start, endTime: end, categoryId: categoryId)
         focusSessions.append(session)
-        save()
+        persist(.immediate)
     }
 
     func endActiveFocusSession() {
         guard let index = activeFocusSessionIndex() else { return }
         focusSessions[index].endTime = Date()
-        save()
+        persist(.immediate)
     }
 
     func activeFocusSession() -> FocusSession? {
@@ -322,7 +346,7 @@ final class LocalDataStore: ObservableObject {
         var current = preferences
         update(&current)
         preferences = current
-        save()
+        persist(.immediate)
     }
 
     func categoryName(for id: UUID?) -> String {
@@ -342,41 +366,53 @@ final class LocalDataStore: ObservableObject {
     // MARK: - Phase 1: extraction & Retrieval
     
     func performIncrementalImport() async throws {
+        if isImporting {
+            return
+        }
+        let now = Date()
+        if let lastImportAttempt, now.timeIntervalSince(lastImportAttempt) < importThrottleInterval {
+            return
+        }
+        isImporting = true
+        lastImportAttempt = now
+        defer { isImporting = false }
+
         let lastImport = preferences.lastImportTimestamp
         let newEvents = try KnowledgeCReader.shared.fetchEvents(since: lastImport)
-        
+        _ = applyImportedEvents(newEvents)
+    }
+
+    @discardableResult
+    func applyImportedEvents(_ newEvents: [RawEvent]) -> Int {
         let existingHashes = Set(rawEvents.map { $0.metadataHash })
         var addedEvents: [RawEvent] = []
-        
-        for event in newEvents {
-            if !existingHashes.contains(event.metadataHash) {
-                rawEvents.append(event)
-                addedEvents.append(event)
-            }
+
+        for event in newEvents where !existingHashes.contains(event.metadataHash) {
+            rawEvents.append(event)
+            addedEvents.append(event)
         }
-        
+
         if !addedEvents.isEmpty {
             rawEvents.sort { $0.timestamp < $1.timestamp }
-            
-            // Phase 2: Derive Sessions from new events
-            // Phase 3: Apply Rules during derivation
             let matches = SessionManager.shared.updateSessions(&sessions, with: addedEvents, rules: rules)
             ruleMatches.append(contentsOf: matches)
-            
-            // Update timestamp to the latest event time we imported
-            if let latest = newEvents.last?.timestamp {
-                updatePreferences { prefs in
-                    prefs.lastImportTimestamp = latest
-                }
-            }
-            save()
         }
+
+        // Update watermark even when all rows were duplicates, to avoid rescanning.
+        if let latestScanned = newEvents.last?.timestamp {
+            preferences.lastImportTimestamp = latestScanned
+        }
+
+        if !addedEvents.isEmpty || newEvents.last?.timestamp != nil {
+            persist(.deferred)
+        }
+        return addedEvents.count
     }
     
     func updateSessionCategory(sessionId: UUID, categoryId: UUID?) {
         guard let index = sessions.firstIndex(where: { $0.id == sessionId }) else { return }
         sessions[index].categoryId = categoryId
-        save()
+        persist(.immediate)
     }
     
     func events(from startDate: Date, to endDate: Date) -> [ActivityEvent] {

@@ -12,6 +12,7 @@ struct AISuggestion: Equatable {
 
 protocol AICategoryServiceType {
     var availability: AIAvailability { get }
+    func refreshAvailability() async -> AIAvailability
     func suggestCategory(for event: ActivityEvent) async throws -> AISuggestion
     func suggestCategories(from events: [ActivityEvent]) async throws -> [String]
 }
@@ -22,6 +23,7 @@ import FoundationModels
 @available(macOS 15, *)
 final class AICategoryService: AICategoryServiceType {
     private let session: LanguageModelSession
+    private var cachedAvailability: AIAvailability?
 
     init() {
         session = LanguageModelSession(instructions: """
@@ -31,15 +33,22 @@ final class AICategoryService: AICategoryServiceType {
     }
 
     var availability: AIAvailability {
+        cachedAvailability ?? .unavailable("Not checked yet.")
+    }
+
+    func refreshAvailability() async -> AIAvailability {
         let status = SystemLanguageModel.default.availability
+        let resolved: AIAvailability
         switch status {
         case .available:
-            return .available
+            resolved = .available
         case .unavailable(let reason):
-            return .unavailable(String(describing: reason))
+            resolved = .unavailable(String(describing: reason))
         @unknown default:
-            return .unavailable("Unknown availability")
+            resolved = .unavailable("Unknown availability")
         }
+        cachedAvailability = resolved
+        return resolved
     }
 
     func suggestCategory(for event: ActivityEvent) async throws -> AISuggestion {
@@ -84,6 +93,10 @@ struct CategoryList {
 #else
 final class AICategoryService: AICategoryServiceType {
     var availability: AIAvailability {
+        .unavailable("Not checked yet.")
+    }
+
+    func refreshAvailability() async -> AIAvailability {
         .unavailable("Foundation Models is not available on this system.")
     }
 

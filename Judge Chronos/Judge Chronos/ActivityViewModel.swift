@@ -12,7 +12,7 @@ final class ActivityViewModel: ObservableObject {
     @Published var rangeStartDate: Date = Calendar.current.startOfDay(for: Date())
     @Published var rangeEndDate: Date = Calendar.current.startOfDay(for: Date())
     @Published var lastRefresh: Date? = nil
-    @Published var aiAvailability: AIAvailability = .unavailable("Checking Apple Intelligence status...")
+    @Published var aiAvailability: AIAvailability = .unavailable("Not checked yet. Use AI Suggest or Refresh AI Status.")
     @Published var suggestions: [String: AISuggestion] = [:]
     @Published var suggestionErrors: [String: String] = [:]
     @Published var isSuggestingEvents: Set<String> = []
@@ -24,6 +24,7 @@ final class ActivityViewModel: ObservableObject {
     private let dataStore: LocalDataStore
     private let aiService: AICategoryServiceType
     private let calendarService: CalendarService
+    private var hasCheckedAIAvailability = false
 
     init(
         database: ActivityDatabase = ActivityDatabase(),
@@ -35,7 +36,6 @@ final class ActivityViewModel: ObservableObject {
         self.dataStore = dataStore
         self.aiService = aiService
         self.calendarService = calendarService
-        aiAvailability = aiService.availability
     }
 
     func refresh() {
@@ -88,21 +88,19 @@ final class ActivityViewModel: ObservableObject {
             pruneSuggestions()
             lastRefresh = Date()
         } catch KnowledgeCReaderError.databaseNotFound(let searchedPaths) {
-            print("Knowledge database not found in paths: \(searchedPaths)")
+            _ = searchedPaths
             showingOnboarding = true
-            errorMessage = "Knowledge database not found yet. macOS may not have recorded usage or Full Disk Access is missing."
+            errorMessage = "Activity database not found yet. Grant Full Disk Access, relaunch Judge Chronos, then press Refresh."
             events = []
         } catch KnowledgeCReaderError.permissionDenied(let path) {
-            if let path {
-                print("Knowledge database permission denied at path: \(path)")
-            }
+            _ = path
             showingOnboarding = true
-            errorMessage = "Grant Full Disk Access and relaunch Judge Chronos."
+            errorMessage = "Full Disk Access is required for macOS activity data. Open Settings > Privacy & Security > Full Disk Access, enable Judge Chronos, relaunch, then press Refresh."
             events = []
         } catch KnowledgeCReaderError.databaseUnreadable(let path, let error) {
-            print("Knowledge database unreadable at path \(path): \(error)")
+            _ = (path, error)
             showingOnboarding = true
-            errorMessage = "Could not open the Knowledge database. Check Full Disk Access, then relaunch."
+            errorMessage = "Could not open the macOS activity database. Confirm Full Disk Access and relaunch Judge Chronos."
             events = []
         } catch KnowledgeCReaderError.queryFailed(let error) {
             showingOnboarding = false
@@ -176,14 +174,18 @@ final class ActivityViewModel: ObservableObject {
 
     func suggestCategory(for event: ActivityEvent) {
         guard !event.isIdle else { return }
-        guard case .available = aiAvailability else {
-            suggestionErrors[event.eventKey] = "Apple Intelligence is unavailable."
-            return
-        }
         guard !isSuggestingEvents.contains(event.eventKey) else { return }
         isSuggestingEvents.insert(event.eventKey)
         suggestionErrors[event.eventKey] = nil
         Task {
+            let available = await ensureAIAvailable()
+            guard available else {
+                await MainActor.run {
+                    suggestionErrors[event.eventKey] = "Apple Intelligence is unavailable."
+                    isSuggestingEvents.remove(event.eventKey)
+                }
+                return
+            }
             do {
                 let suggestion = try await aiService.suggestCategory(for: event)
                 await MainActor.run {
@@ -213,12 +215,19 @@ final class ActivityViewModel: ObservableObject {
     }
 
     func suggestCategoriesFromRecent() {
-        guard case .available = aiAvailability else { return }
         guard !isSuggestingCategories else { return }
         let recentEvents = events.filter { !$0.isIdle }
         guard !recentEvents.isEmpty else { return }
         isSuggestingCategories = true
         Task {
+            let available = await ensureAIAvailable()
+            guard available else {
+                await MainActor.run {
+                    categorySuggestions = []
+                    isSuggestingCategories = false
+                }
+                return
+            }
             do {
                 let result = try await aiService.suggestCategories(from: recentEvents)
                 await MainActor.run {
@@ -240,7 +249,27 @@ final class ActivityViewModel: ObservableObject {
     }
 
     func refreshAIAvailability() {
-        aiAvailability = aiService.availability
+        Task {
+            let availability = await aiService.refreshAvailability()
+            await MainActor.run {
+                aiAvailability = availability
+                hasCheckedAIAvailability = true
+            }
+        }
+    }
+
+    private func ensureAIAvailable() async -> Bool {
+        if !hasCheckedAIAvailability {
+            let availability = await aiService.refreshAvailability()
+            await MainActor.run {
+                aiAvailability = availability
+                hasCheckedAIAvailability = true
+            }
+        }
+        if case .available = aiAvailability {
+            return true
+        }
+        return false
     }
 
     func loadWeeklyRecap(referenceDate: Date = Date()) async {

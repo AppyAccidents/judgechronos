@@ -198,13 +198,18 @@ struct TimelineView: View {
         .navigationTitle("Timeline")
         .onAppear {
             viewModel.refresh()
-            viewModel.refreshAIAvailability()
             if accessibilityReader.isTrusted {
                 accessibilityReader.startPolling(dataStore: dataStore)
                 idleMonitor.startMonitoring(dataStore: dataStore)
             }
         }
-        .onReceive(dataStore.objectWillChange) { _ in
+        .onChange(of: dataStore.assignments) { _, _ in
+            viewModel.reapplyCategories()
+        }
+        .onChange(of: dataStore.rules) { _, _ in
+            viewModel.reapplyCategories()
+        }
+        .onChange(of: dataStore.focusSessions) { _, _ in
             viewModel.reapplyCategories()
         }
         .sheet(isPresented: $showingDailyReview) {
@@ -1346,6 +1351,7 @@ struct ReportsView: View {
 struct SettingsView: View {
     @EnvironmentObject private var viewModel: ActivityViewModel
     @EnvironmentObject private var dataStore: LocalDataStore
+    @StateObject private var accessibilityReader = AccessibilityReader.shared
     @State private var exclusionPattern: String = ""
     @State private var goalCategoryId: UUID? = nil
     @State private var goalMinutes: String = "60"
@@ -1363,6 +1369,29 @@ struct SettingsView: View {
                     Button("Reveal App in Finder") {
                         revealAppInFinder()
                     }
+                }
+            }
+
+            Section("Permissions Diagnostics") {
+                HStack {
+                    Text("Accessibility")
+                    Spacer()
+                    Text(accessibilityReader.isTrusted ? "Granted" : "Not granted")
+                        .foregroundColor(accessibilityReader.isTrusted ? AppTheme.Colors.statusReady : AppTheme.Colors.statusWarning)
+                }
+                HStack {
+                    Text("Calendar")
+                    Spacer()
+                    Text(CalendarService.shared.hasAccess ? "Granted" : "Not granted")
+                        .foregroundColor(CalendarService.shared.hasAccess ? AppTheme.Colors.statusReady : AppTheme.Colors.statusWarning)
+                }
+                HStack(alignment: .top) {
+                    Text("Full Disk Access")
+                    Spacer()
+                    Text("Not directly readable by apps. If activity import fails, enable it for Judge Chronos and relaunch.")
+                        .foregroundColor(.secondary)
+                        .multilineTextAlignment(.trailing)
+                        .frame(maxWidth: 360, alignment: .trailing)
                 }
             }
 
@@ -1567,6 +1596,9 @@ struct SettingsView: View {
         }
         .padding()
         .navigationTitle("Settings")
+        .onAppear {
+            accessibilityReader.checkPermissions()
+        }
     }
 
     private func openFullDiskAccessSettings() {

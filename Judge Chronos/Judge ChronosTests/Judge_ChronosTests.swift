@@ -94,10 +94,75 @@ struct Judge_ChronosTests {
             throw error
         }
     }
+
+    @Test func watermarkAdvancesWhenAllImportedRowsAreDuplicates() async throws {
+        let tempURL = URL(fileURLWithPath: NSTemporaryDirectory()).appendingPathComponent(UUID().uuidString)
+        let store = LocalDataStore(fileURL: tempURL)
+        let start = Date()
+        let existing = RawEvent(
+            id: UUID(),
+            timestamp: start,
+            duration: 60,
+            bundleId: "com.example.app",
+            appName: "Example",
+            windowTitle: nil,
+            source: .appUsage,
+            metadataHash: "hash-1",
+            importedAt: start
+        )
+        store.addRawEvent(existing)
+        let later = start.addingTimeInterval(3600)
+        let duplicateRow = RawEvent(
+            id: UUID(),
+            timestamp: later,
+            duration: 60,
+            bundleId: "com.example.app",
+            appName: "Example",
+            windowTitle: nil,
+            source: .appUsage,
+            metadataHash: "hash-1",
+            importedAt: later
+        )
+
+        let addedCount = store.applyImportedEvents([duplicateRow])
+
+        #expect(addedCount == 0)
+        #expect(store.preferences.lastImportTimestamp == later)
+    }
+
+    @Test func contextEventsAreCappedAtRetentionLimit() async throws {
+        let tempURL = URL(fileURLWithPath: NSTemporaryDirectory()).appendingPathComponent(UUID().uuidString)
+        let store = LocalDataStore(fileURL: tempURL)
+        for i in 0..<2105 {
+            let event = ContextEvent(
+                id: UUID(),
+                timestamp: Date().addingTimeInterval(TimeInterval(i)),
+                bundleId: "com.example.app",
+                appName: "Example",
+                windowTitle: "Window \(i)",
+                documentPath: nil
+            )
+            store.addContextEvent(event)
+        }
+        #expect(store.contextEvents.count == 2000)
+    }
+
+    @Test func accessibilityReaderCooldownDeduplicatesContext() async throws {
+        let reader = AccessibilityReader()
+        let now = Date()
+        let first = reader.shouldRecordAndMarkContext(appName: "Safari", windowTitle: "Doc", now: now)
+        let second = reader.shouldRecordAndMarkContext(appName: "Safari", windowTitle: "Doc", now: now.addingTimeInterval(5))
+        let third = reader.shouldRecordAndMarkContext(appName: "Safari", windowTitle: "Doc", now: now.addingTimeInterval(25))
+
+        #expect(first == true)
+        #expect(second == false)
+        #expect(third == true)
+    }
 }
 
 final class MockAICategoryService: AICategoryServiceType {
     var availability: AIAvailability = .available
+    func refreshAvailability() async -> AIAvailability { availability }
     func suggestCategory(for event: ActivityEvent) async throws -> AISuggestion {
         AISuggestion(category: "Focus", rationale: nil)
     }

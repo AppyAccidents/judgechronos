@@ -228,7 +228,9 @@ final class MenuBarDataSource: ObservableObject {
             object: nil,
             queue: .main
         ) { [weak self] _ in
-            self?.checkCurrentApp()
+            Task { @MainActor in
+                self?.checkCurrentApp()
+            }
         }
     }
     
@@ -291,18 +293,16 @@ final class MenuBarDataSource: ObservableObject {
                     }
                 }
             } catch KnowledgeCReaderError.databaseNotFound(let searchedPaths) {
-                print("Menu bar import: knowledge database not found in paths: \(searchedPaths)")
+                _ = searchedPaths
                 await MainActor.run {
                     events = []
-                    lastError = "Setup required: grant Full Disk Access, then refresh."
+                    lastError = "Setup required: grant Full Disk Access, relaunch Judge Chronos, then refresh."
                 }
             } catch KnowledgeCReaderError.permissionDenied(let path) {
-                if let path {
-                    print("Menu bar import: permission denied for path: \(path)")
-                }
+                _ = path
                 await MainActor.run {
                     events = []
-                    lastError = "Full Disk Access required. Relaunch after granting access."
+                    lastError = "Full Disk Access required. Enable access in Privacy & Security, relaunch, then refresh."
                 }
             } catch {
                 await MainActor.run {

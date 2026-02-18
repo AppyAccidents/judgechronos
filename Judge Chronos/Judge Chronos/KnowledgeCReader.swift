@@ -67,7 +67,6 @@ final class KnowledgeCReader {
             query += " ORDER BY ZSTARTDATE ASC"
 
             var events: [RawEvent] = []
-            var scannedRows = 0
             let importedAt = Date()
             var statement: OpaquePointer?
             guard sqlite3_prepare_v2(db, query, -1, &statement, nil) == SQLITE_OK, let statement else {
@@ -83,16 +82,12 @@ final class KnowledgeCReader {
             }
 
             while sqlite3_step(statement) == SQLITE_ROW {
-                scannedRows += 1
                 guard let appNamePtr = sqlite3_column_text(statement, 0) else { continue }
                 let appName = String(cString: appNamePtr)
                 guard !appName.isEmpty else { continue }
 
                 let startVal = sqlite3_column_double(statement, 1)
                 let endVal = sqlite3_column_double(statement, 2)
-                if scannedRows <= 3 {
-                    print("KnowledgeCReader sample row \(scannedRows): app=\(appName), start=\(startVal), end=\(endVal)")
-                }
                 let duration = max(0, endVal - startVal)
                 guard duration > 0 else { continue }
 
@@ -122,17 +117,12 @@ final class KnowledgeCReader {
                 ])
             }
 
-            if scannedRows > 0, events.isEmpty {
-                print("KnowledgeCReader: scanned \(scannedRows) rows but produced 0 events. Check timestamp decoding/schema types.")
-            }
-            
             return events
             
         } catch {
             if let known = error as? KnowledgeCReaderError {
                 throw known
             }
-            print("KnowledgeCReader error: \(error)")
             if Self.isPermissionDenied(error) {
                 throw KnowledgeCReaderError.permissionDenied(path: databasePath)
             }

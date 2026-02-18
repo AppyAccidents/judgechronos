@@ -8,11 +8,14 @@ class AccessibilityReader: ObservableObject {
     @Published var isTrusted: Bool = AXIsProcessTrusted()
     
     private var pollingTimer: Timer?
+    private var workspaceObserver: NSObjectProtocol?
     private var lastRecordedTitle: String?
     private var lastRecordedApp: String?
+    private var lastRecordedAt: Date?
     
     // Configurable polling interval
-    private let pollInterval: TimeInterval = 5.0
+    private let pollInterval: TimeInterval = 15.0
+    private let sameContextCooldown: TimeInterval = 20.0
     
     init() {
         checkPermissions()
@@ -32,64 +35,118 @@ class AccessibilityReader: ObservableObject {
         
         // Only poll if we have permissions
         guard isTrusted else { return }
+
+        setupWorkspaceObserver(dataStore: dataStore)
+        captureCurrentContext(dataStore: dataStore)
         
         pollingTimer = Timer.scheduledTimer(withTimeInterval: pollInterval, repeats: true) { [weak self] _ in
-            Task { @MainActor in
-                self?.pollCurrentWindow(dataStore: dataStore)
-            }
+            self?.captureCurrentContext(dataStore: dataStore)
         }
     }
     
     func stopPolling() {
         pollingTimer?.invalidate()
         pollingTimer = nil
+        if let workspaceObserver {
+            NSWorkspace.shared.notificationCenter.removeObserver(workspaceObserver)
+            self.workspaceObserver = nil
+        }
     }
-    
-    @MainActor
-    private func pollCurrentWindow(dataStore: LocalDataStore) {
+
+    deinit {
+        if let workspaceObserver {
+            NSWorkspace.shared.notificationCenter.removeObserver(workspaceObserver)
+        }
+    }
+
+    private func setupWorkspaceObserver(dataStore: LocalDataStore) {
+        workspaceObserver = NSWorkspace.shared.notificationCenter.addObserver(
+            forName: NSWorkspace.didActivateApplicationNotification,
+            object: nil,
+            queue: .main
+        ) { [weak self] _ in
+            self?.captureCurrentContext(dataStore: dataStore)
+        }
+    }
+
+    private func captureCurrentContext(dataStore: LocalDataStore) {
         guard let frontApp = NSWorkspace.shared.frontmostApplication else { return }
-        
         let appName = frontApp.localizedName ?? "Unknown"
         let bundleId = frontApp.bundleIdentifier ?? "unknown.bundle.id"
         let pid = frontApp.processIdentifier
-        
-        var windowTitle: String? = nil
-        
-        // Accessibility API to get window title
-        let appRef = AXUIElementCreateApplication(pid)
-        var focusedWindowValue: CFTypeRef?
-        
-        // Get "FocusedWindow" first
-        if AXUIElementCopyAttributeValue(appRef, kAXFocusedWindowAttribute as CFString, &focusedWindowValue) == .success {
-            guard let focusedWindowValue else { return }
-            guard CFGetTypeID(focusedWindowValue) == AXUIElementGetTypeID() else { return }
-            let windowRef = unsafeBitCast(focusedWindowValue, to: AXUIElement.self)
-            var titleValue: CFTypeRef?
-            // Get "Title" of that window
-            if AXUIElementCopyAttributeValue(windowRef, kAXTitleAttribute as CFString, &titleValue) == .success,
-               let title = titleValue as? String, !title.isEmpty {
-                windowTitle = title
+
+        if frontApp.activationPolicy != .regular {
+            return
+        }
+        if bundleId == Bundle.main.bundleIdentifier {
+            return
+        }
+        if bundleId.hasPrefix("com.apple.system") || bundleId == "com.apple.dock" || bundleId == "com.apple.finder" {
+            return
+        }
+
+        DispatchQueue.global(qos: .utility).async { [weak self] in
+            guard let self else { return }
+            let title = self.focusedWindowTitle(for: pid)
+            DispatchQueue.main.async {
+                self.recordContextIfNeeded(
+                    appName: appName,
+                    bundleId: bundleId,
+                    windowTitle: title,
+                    dataStore: dataStore
+                )
             }
         }
-        
-        // Debounce: Only save if changed or enough time passed? 
-        // For Phase 8 MVP: Save on change.
-        if appName != lastRecordedApp || windowTitle != lastRecordedTitle {
-            let sanitizedTitle = windowTitle.map { ContextEvent.sanitize($0) }
-            
-            let event = ContextEvent(
-                id: UUID(),
-                timestamp: Date(),
-                bundleId: bundleId,
-                appName: appName,
-                windowTitle: sanitizedTitle,
-                documentPath: nil // Document path requires kAXDocumentAttribute, left for later
-            )
-            
-            dataStore.addContextEvent(event)
-            
-            lastRecordedApp = appName
-            lastRecordedTitle = windowTitle
+    }
+
+    private func focusedWindowTitle(for pid: pid_t) -> String? {
+        let appRef = AXUIElementCreateApplication(pid)
+        var focusedWindowValue: CFTypeRef?
+        guard AXUIElementCopyAttributeValue(appRef, kAXFocusedWindowAttribute as CFString, &focusedWindowValue) == .success,
+              let focusedWindowValue,
+              CFGetTypeID(focusedWindowValue) == AXUIElementGetTypeID() else {
+            return nil
         }
+
+        let windowRef = unsafeBitCast(focusedWindowValue, to: AXUIElement.self)
+        var titleValue: CFTypeRef?
+        guard AXUIElementCopyAttributeValue(windowRef, kAXTitleAttribute as CFString, &titleValue) == .success,
+              let title = titleValue as? String,
+              !title.isEmpty else {
+            return nil
+        }
+        return title
+    }
+
+    @MainActor
+    private func recordContextIfNeeded(appName: String, bundleId: String, windowTitle: String?, dataStore: LocalDataStore) {
+        let now = Date()
+        if !shouldRecordAndMarkContext(appName: appName, windowTitle: windowTitle, now: now) {
+            return
+        }
+
+        let sanitizedTitle = windowTitle.map { ContextEvent.sanitize($0) }
+        let event = ContextEvent(
+            id: UUID(),
+            timestamp: now,
+            bundleId: bundleId,
+            appName: appName,
+            windowTitle: sanitizedTitle,
+            documentPath: nil
+        )
+        dataStore.addContextEvent(event)
+    }
+
+    @MainActor
+    func shouldRecordAndMarkContext(appName: String, windowTitle: String?, now: Date = Date()) -> Bool {
+        if appName == lastRecordedApp, windowTitle == lastRecordedTitle,
+           let lastRecordedAt,
+           now.timeIntervalSince(lastRecordedAt) < sameContextCooldown {
+            return false
+        }
+        lastRecordedApp = appName
+        lastRecordedTitle = windowTitle
+        lastRecordedAt = now
+        return true
     }
 }
