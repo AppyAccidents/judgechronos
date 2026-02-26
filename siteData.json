@@ -1,0 +1,13 @@
+{
+  "id": "judgechronos",
+  "title": "Judge Chronos",
+  "group_id": "group-macos",
+  "platform_tag": "macOS",
+  "status": "coming_soon",
+  "description": "A time judge with no chill: it inspects your app habits, names your procrastination dragons, and cross-examines your tab hoarding under bright fluorescent lights.",
+  "vibe_tone": "cyan",
+  "vibe_text": "Local-first truth serum with optional smart hints.",
+  "art": "JUDGECHRONOS",
+  "superpower": "Turns screen-time fog into sharp timelines",
+  "order_index": 20
+}
