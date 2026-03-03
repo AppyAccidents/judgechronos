@@ -120,11 +120,76 @@ struct Session: Identifiable, Hashable, Codable {
     }
 }
 
+enum ProductivityRating: Int, Codable, CaseIterable {
+    case veryDistracting = -2
+    case distracting = -1
+    case neutral = 0
+    case productive = 1
+    case veryProductive = 2
+    
+    var label: String {
+        switch self {
+        case .veryDistracting: return "Very Distracting"
+        case .distracting: return "Distracting"
+        case .neutral: return "Neutral"
+        case .productive: return "Productive"
+        case .veryProductive: return "Very Productive"
+        }
+    }
+    
+    var color: Color {
+        switch self {
+        case .veryDistracting: return .red
+        case .distracting: return .orange
+        case .neutral: return .gray
+        case .productive: return .green
+        case .veryProductive: return Color(hex: "#22C55E") ?? .green
+        }
+    }
+    
+    var icon: String {
+        switch self {
+        case .veryDistracting: return "arrow.down.circle.fill"
+        case .distracting: return "arrow.down"
+        case .neutral: return "minus"
+        case .productive: return "arrow.up"
+        case .veryProductive: return "arrow.up.circle.fill"
+        }
+    }
+}
+
 struct Project: Identifiable, Codable, Hashable {
     let id: UUID
     var name: String
     var colorHex: String
     var parentId: UUID?
+    var productivityRating: ProductivityRating?
+    var hourlyRate: Double?
+    var isBillable: Bool
+    var archived: Bool
+    var createdAt: Date
+    
+    init(
+        id: UUID = UUID(),
+        name: String,
+        colorHex: String,
+        parentId: UUID? = nil,
+        productivityRating: ProductivityRating? = nil,
+        hourlyRate: Double? = nil,
+        isBillable: Bool = false,
+        archived: Bool = false,
+        createdAt: Date = Date()
+    ) {
+        self.id = id
+        self.name = name
+        self.colorHex = colorHex
+        self.parentId = parentId
+        self.productivityRating = productivityRating
+        self.hourlyRate = hourlyRate
+        self.isBillable = isBillable
+        self.archived = archived
+        self.createdAt = createdAt
+    }
 }
 
 struct Tag: Identifiable, Codable, Hashable {

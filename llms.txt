@@ -1,0 +1,156 @@
+# Judge Chronos
+
+> Privacy-first automatic time tracking for macOS
+
+## Overview
+
+Judge Chronos is an open-source, privacy-focused time-tracking application built exclusively for macOS. It automatically tracks app usage, website time, and meeting duration to help users understand and optimize their productivity.
+
+## Core Features
+
+- **Automatic Time Tracking**: Records app usage, documents, and websites without manual timers
+- **Hierarchical Projects**: Organize time into nested project structures
+- **AI-Powered Categorization**: Apple Intelligence suggests categories for activities
+- **Productivity Scoring**: Rate projects and track productivity trends over time
+- **Browser Extensions**: Chrome/Safari extensions for accurate website tracking
+- **Invoice-Ready Reports**: PDF/XLSX export for timesheets and billing
+- **Post-Call Prompts**: Automatically detect video calls and prompt for time logging
+- **Privacy First**: All data stays local on your device
+
+## Architecture
+
+```
+Judge Chronos/
+├── SwiftUI Native App (macOS 15+)
+├── Local SQLite Storage
+├── Apple Intelligence Integration
+├── Browser Extension Support (Chrome/Safari)
+├── Dual Distribution: App Store + Direct
+```
+
+## Data Models
+
+### Core Entities
+
+- **Session**: A time entry with start/end, app, window title, project/category
+- **Project**: Hierarchical organization with productivity ratings
+- **Category**: Simple tags for grouping activities
+- **Rule**: Automation rules for categorization
+- **FocusSession**: Pomodoro-style focus timers
+
+### Key Features
+
+- Immutable raw events (never modified)
+- Derived sessions allow logical edits
+- Full audit trail of rule applications
+- JSON export for data portability
+
+## API Overview
+
+### LocalDataStore (Main Data Access)
+
+```swift
+// Project Management
+func addProject(_ project: Project)
+func moveProject(_ projectId: UUID, toParent: UUID?)
+func projectHierarchy() -> [ProjectNode]
+
+// Session Management  
+func addSession(_ session: Session)
+func events(from: Date, to: Date) -> [ActivityEvent]
+
+// Reporting
+func totalTime(for projectId: UUID) -> TimeInterval
+func projectName(for projectId: UUID?) -> String
+```
+
+### ProductivityEngine
+
+```swift
+func calculateDailyScore(for: Date) -> ProductivityScore
+func calculateTrend(for: DateInterval) -> ProductivityTrend
+func suggestImprovements() -> [String]
+```
+
+### Report Generation
+
+```swift
+PDFReportGenerator.generateReport(config: ReportConfiguration)
+XLSXReportGenerator.generateReport(config: ReportConfiguration)
+```
+
+## Browser Extension Protocol
+
+### Native Messaging
+
+Extensions communicate via native messaging on port `com.berkerceylan.judgechronos.browser`.
+
+**Message Format:**
+```json
+{
+  "type": "URL_ACTIVE",
+  "browser": "chrome",
+  "url": "https://github.com/user/repo",
+  "domain": "github.com", 
+  "title": "User/Repo - GitHub",
+  "timestamp": "2026-03-03T10:00:00Z"
+}
+```
+
+### Message Types
+
+- `URL_ACTIVE` - User is viewing this URL
+- `URL_INACTIVE` - Tab hidden
+- `BROWSER_BLUR` - Window lost focus
+- `TAB_CLOSED` - Tab was closed
+
+## Configuration
+
+### App Settings
+
+Key user preferences stored in `UserPreferences`:
+
+- `workDayStart` / `workDayEnd`: Working hours
+- `privateModeEnabled`: Pause tracking
+- `reviewReminderEnabled`: Daily review notifications
+- `weeklyRecapEnabled`: Weekly summary
+
+### Project Settings
+
+Each `Project` supports:
+
+- `productivityRating`: Very Distracting (-2) to Very Productive (+2)
+- `hourlyRate`: For invoicing
+- `isBillable`: Include in billable reports
+- `parentId`: For hierarchy
+
+## File Locations
+
+- **App Data**: `~/Library/Application Support/JudgeChronos/`
+- **Local JSON**: `local_data.json`
+- **SQLite**: `activity.sqlite3`
+- **Exports**: User-selected directory
+
+## Build & Distribution
+
+### Targets
+
+- `Judge Chronos`: Direct distribution (Full Disk Access)
+- `Judge Chronos MAS`: Mac App Store (Sandboxed)
+
+### Key Differences
+
+| Feature | Direct | MAS |
+|---------|--------|-----|
+| Full Disk Access | ✅ | ❌ |
+| KnowledgeC.db | ✅ | ❌ |
+| App Sandbox | ❌ | ✅ |
+
+## License
+
+MIT License - See LICENSE file
+
+## Links
+
+- GitHub: https://github.com/berkerceylan/judgechronos
+- Issues: https://github.com/berkerceylan/judgechronos/issues

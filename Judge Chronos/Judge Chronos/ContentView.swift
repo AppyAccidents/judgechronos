@@ -6,7 +6,7 @@ import UniformTypeIdentifiers
 
 enum SidebarItem: String, CaseIterable, Identifiable {
     case timeline
-    case categories
+    case projects
     case rules
     case reports
     case settings
@@ -16,7 +16,7 @@ enum SidebarItem: String, CaseIterable, Identifiable {
     var label: String {
         switch self {
         case .timeline: return "Timeline"
-        case .categories: return "Categories"
+        case .projects: return "Projects"
         case .rules: return "Rules"
         case .reports: return "Reports"
         case .settings: return "Settings"
@@ -26,7 +26,7 @@ enum SidebarItem: String, CaseIterable, Identifiable {
     var systemImage: String {
         switch self {
         case .timeline: return "clock"
-        case .categories: return "tag"
+        case .projects: return "folder"
         case .rules: return "line.3.horizontal.decrease.circle"
         case .reports: return "chart.bar"
         case .settings: return "gearshape"
@@ -63,8 +63,8 @@ struct ContentView: View {
             switch selection ?? .timeline {
             case .timeline:
                 TimelineView()
-            case .categories:
-                CategoriesView()
+            case .projects:
+                ProjectHierarchyView()
             case .rules:
                 RulesView()
             case .reports:

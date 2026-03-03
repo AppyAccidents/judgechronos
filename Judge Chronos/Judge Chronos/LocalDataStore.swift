@@ -38,6 +38,13 @@ final class LocalDataStore: ObservableObject {
     private let importThrottleInterval: TimeInterval = 3.0
     private let maxContextEvents = 2_000
     private var rawEventHashes: Set<String> = []
+    
+    // MARK: - Performance: Dictionary-based indices for O(1) lookups
+    private var sessionById: [UUID: Session] = [:]
+    private var projectById: [UUID: Project] = [:]
+    private var categoryById: [UUID: Category] = [:]
+    private var categoryNameIndex: [String: UUID] = [:]
+    private var sessionsByDate: [Date: [Session]] = [:]
 
     init(
         fileURL: URL? = nil,
@@ -114,12 +121,116 @@ final class LocalDataStore: ObservableObject {
         contextEvents.sort { $0.timestamp < $1.timestamp }
         ruleMatches.sort { $0.timestamp < $1.timestamp }
         rawEventHashes = Set(rawEvents.map(\.metadataHash))
+        
+        // Build lookup indices for performance
+        rebuildIndices()
 
         if decoded == nil {
             persist(.immediate)
         } else {
             persist(.deferred)
         }
+    }
+    
+    // MARK: - Index Management
+    private func rebuildIndices() {
+        // Session index by ID
+        sessionById = Dictionary(uniqueKeysWithValues: sessions.map { ($0.id, $0) })
+        
+        // Project index by ID
+        projectById = Dictionary(uniqueKeysWithValues: projects.map { ($0.id, $0) })
+        
+        // Category index by ID
+        categoryById = Dictionary(uniqueKeysWithValues: categories.map { ($0.id, $0) })
+        
+        // Category name index (lowercase for case-insensitive lookup)
+        categoryNameIndex = [:]
+        for category in categories {
+            let key = category.name.trimmingCharacters(in: .whitespacesAndNewlines).lowercased()
+            categoryNameIndex[key] = category.id
+        }
+        
+        // Sessions by date (start of day)
+        rebuildSessionsByDate()
+    }
+    
+    private func rebuildSessionsByDate() {
+        sessionsByDate = [:]
+        let calendar = Calendar.current
+        for session in sessions {
+            let day = calendar.startOfDay(for: session.startTime)
+            sessionsByDate[day, default: []].append(session)
+        }
+    }
+    
+    private func rebuildSessionIndices() {
+        // Session index by ID
+        sessionById = Dictionary(uniqueKeysWithValues: sessions.map { ($0.id, $0) })
+        // Session by date
+        rebuildSessionsByDate()
+    }
+    
+    // MARK: - Index Incremental Updates
+    private func indexAdd(session: Session) {
+        sessionById[session.id] = session
+        let day = Calendar.current.startOfDay(for: session.startTime)
+        sessionsByDate[day, default: []].append(session)
+    }
+    
+    private func indexUpdate(session: Session) {
+        // If date changed, need to rebuild date index
+        if let old = sessionById[session.id], 
+           !Calendar.current.isDate(old.startTime, inSameDayAs: session.startTime) {
+            sessionById[session.id] = session
+            rebuildSessionsByDate()
+        } else {
+            sessionById[session.id] = session
+            // Update in date index
+            let day = Calendar.current.startOfDay(for: session.startTime)
+            if let index = sessionsByDate[day]?.firstIndex(where: { $0.id == session.id }) {
+                sessionsByDate[day]?[index] = session
+            }
+        }
+    }
+    
+    private func indexRemove(sessionId: UUID) {
+        guard let session = sessionById.removeValue(forKey: sessionId) else { return }
+        let day = Calendar.current.startOfDay(for: session.startTime)
+        sessionsByDate[day]?.removeAll { $0.id == sessionId }
+    }
+    
+    private func indexAdd(project: Project) {
+        projectById[project.id] = project
+    }
+    
+    private func indexUpdate(project: Project) {
+        projectById[project.id] = project
+    }
+    
+    private func indexRemove(projectId: UUID) {
+        projectById.removeValue(forKey: projectId)
+    }
+    
+    private func indexAdd(category: Category) {
+        categoryById[category.id] = category
+        let key = category.name.trimmingCharacters(in: .whitespacesAndNewlines).lowercased()
+        categoryNameIndex[key] = category.id
+    }
+    
+    private func indexUpdate(category: Category) {
+        // Update category ID index
+        categoryById[category.id] = category
+        // Rebuild name index since name might have changed
+        categoryNameIndex = [:]
+        for cat in categories {
+            let key = cat.name.trimmingCharacters(in: .whitespacesAndNewlines).lowercased()
+            categoryNameIndex[key] = cat.id
+        }
+    }
+    
+    private func indexRemove(categoryId: UUID) {
+        categoryById.removeValue(forKey: categoryId)
+        categoryNameIndex = categoryNameIndex.filter { $0.value != categoryId }
     }
 
     func save() {
@@ -168,6 +279,7 @@ final class LocalDataStore: ObservableObject {
     func addCategory(name: String, color: Color) {
         let newCategory = Category(id: UUID(), name: name, colorHex: color.toHex())
         categories.append(newCategory)
+        indexAdd(category: newCategory)
         persist(.immediate)
     }
 
@@ -175,6 +287,7 @@ final class LocalDataStore: ObservableObject {
         guard let index = categories.firstIndex(where: { $0.id == category.id }) else { return }
         categories[index].name = name
         categories[index].colorHex = color.toHex()
+        indexUpdate(category: categories[index])
         persist(.immediate)
     }
 
@@ -182,7 +295,126 @@ final class LocalDataStore: ObservableObject {
         categories.removeAll { $0.id == category.id }
         rules.removeAll { $0.targetCategoryId == category.id }
         assignments = assignments.filter { $0.value != category.id }
+        indexRemove(categoryId: category.id)
         persist(.immediate)
+    }
+
+    // MARK: - Project Management
+    
+    func addProject(_ project: Project) {
+        projects.append(project)
+        indexAdd(project: project)
+        persist(.immediate)
+    }
+    
+    func updateProject(_ project: Project) {
+        guard let index = projects.firstIndex(where: { $0.id == project.id }) else { return }
+        projects[index] = project
+        indexUpdate(project: project)
+        persist(.immediate)
+    }
+    
+    func deleteProject(_ project: Project) {
+        // Reassign children to root (no parent)
+        for index in projects.indices where projects[index].parentId == project.id {
+            projects[index].parentId = nil
+            indexUpdate(project: projects[index])
+        }
+        projects.removeAll { $0.id == project.id }
+        indexRemove(projectId: project.id)
+        // Clear project assignments and update session indices
+        for index in sessions.indices where sessions[index].projectId == project.id {
+            sessions[index].projectId = nil
+            indexUpdate(session: sessions[index])
+        }
+        persist(.immediate)
+    }
+    
+    func moveProject(_ projectId: UUID, toParent parentId: UUID?) {
+        guard let index = projects.firstIndex(where: { $0.id == projectId }) else { return }
+        // Prevent circular references
+        if let parentId = parentId {
+            guard !isDescendant(projectId: parentId, of: projectId) else { return }
+        }
+        projects[index].parentId = parentId
+        indexUpdate(project: projects[index])
+        persist(.immediate)
+    }
+    
+    func projectHierarchy() -> [ProjectNode] {
+        buildProjectTree(parentId: nil, level: 0)
+    }
+    
+    func projectPath(for projectId: UUID) -> [Project] {
+        var path: [Project] = []
+        var currentId: UUID? = projectId
+        while let id = currentId, let project = projectById[id] {
+            path.insert(project, at: 0)
+            currentId = project.parentId
+        }
+        return path
+    }
+    
+    func totalTime(for projectId: UUID, includeSubprojects: Bool = true) -> TimeInterval {
+        var projectIds = [projectId]
+        if includeSubprojects {
+            projectIds.append(contentsOf: descendantProjectIds(of: projectId))
+        }
+        return sessions
+            .filter { session in
+                projectIds.contains { $0 == session.projectId }
+            }
+            .reduce(0) { $0 + $1.duration }
+    }
+    
+    func assignProject(appName: String, projectId: UUID?) {
+        if let projectId {
+            assignments[appName] = projectId
+        } else {
+            assignments.removeValue(forKey: appName)
+        }
+        persist(.immediate)
+    }
+    
+    // MARK: - Project Helpers
+    
+    private func buildProjectTree(parentId: UUID?, level: Int) -> [ProjectNode] {
+        projects
+            .filter { $0.parentId == parentId && !$0.archived }
+            .sorted { $0.createdAt < $1.createdAt }
+            .map { project in
+                ProjectNode(
+                    id: project.id,
+                    project: project,
+                    children: buildProjectTree(parentId: project.id, level: level + 1),
+                    level: level,
+                    isExpanded: true
+                )
+            }
+    }
+    
+    private func isDescendant(projectId: UUID, of ancestorId: UUID) -> Bool {
+        let children = projects.filter { $0.parentId == ancestorId }
+        for child in children {
+            if child.id == projectId || isDescendant(projectId: projectId, of: child.id) {
+                return true
+            }
+        }
+        return false
+    }
+    
+    func descendantProjectIds(of projectId: UUID) -> [UUID] {
+        let children = projects.filter { $0.parentId == projectId }
+        var ids = children.map { $0.id }
+        for child in children {
+            ids.append(contentsOf: descendantProjectIds(of: child.id))
+        }
+        return ids
+    }
+    
+    func projectName(for projectId: UUID?) -> String {
+        guard let projectId else { return "Uncategorized" }
+        return projectById[projectId]?.name ?? "Uncategorized"
     }
 
     func addRule(name: String, appNamePattern: String?, categoryId: UUID?, priority: Int = 10, markAsPrivate: Bool = false) {
@@ -231,6 +463,13 @@ final class LocalDataStore: ObservableObject {
         persist(.immediate)
     }
 
+    func addSession(_ session: Session) {
+        sessions.append(session)
+        sessions.sort { $0.startTime < $1.startTime }
+        indexAdd(session: session)
+        persist(.immediate)
+    }
+
     func addContextEvent(_ event: ContextEvent) {
         contextEvents.append(event)
         contextEvents.sort { $0.timestamp < $1.timestamp }
@@ -250,6 +489,7 @@ final class LocalDataStore: ObservableObject {
         rawEventHashes.insert(event.metadataHash)
         let changed = SessionManager.shared.updateSessions(&sessions, with: [event])
         sessions.sort { $0.startTime < $1.startTime }
+        rebuildSessionIndices()
         applyContextFusion(to: changed, meetings: [])
         reevaluateSessions(sessionIds: changed)
         persist(.deferred)
@@ -279,7 +519,8 @@ final class LocalDataStore: ObservableObject {
     }
 
     func categoryForEvent(_ event: ActivityEvent) -> UUID? {
-        if let session = sessions.first(where: { $0.id == event.id }), let explicit = session.categoryId {
+        // O(1) lookup using dictionary index
+        if let session = sessionById[event.id], let explicit = session.categoryId {
             return explicit
         }
         if let assignment = assignments[event.eventKey] {
@@ -291,7 +532,7 @@ final class LocalDataStore: ObservableObject {
         if let legacy = assignments[event.appName] {
             return legacy
         }
-        if let session = sessions.first(where: { $0.id == event.id }),
+        if let session = sessionById[event.id],
            let rule = RuleMatcher.shared.evaluate(session: session, rules: rules) {
             return rule.rule.targetCategoryId
         }
@@ -299,7 +540,8 @@ final class LocalDataStore: ObservableObject {
     }
 
     func assignmentForEvent(_ event: ActivityEvent) -> UUID? {
-        if let session = sessions.first(where: { $0.id == event.id }) {
+        // O(1) lookup using dictionary index
+        if let session = sessionById[event.id] {
             return session.categoryId
         }
         if let assignment = assignments[event.eventKey] {
@@ -322,7 +564,7 @@ final class LocalDataStore: ObservableObject {
 
     func categoryId(named name: String) -> UUID? {
         let normalized = name.trimmingCharacters(in: .whitespacesAndNewlines).lowercased()
-        return categories.first(where: { $0.name.trimmingCharacters(in: .whitespacesAndNewlines).lowercased() == normalized })?.id
+        return categoryNameIndex[normalized]
     }
 
     func addCategoryIfNeeded(name: String, color: Color = AppTheme.Colors.primary) -> UUID {
@@ -403,12 +645,12 @@ final class LocalDataStore: ObservableObject {
 
     func categoryName(for id: UUID?) -> String {
         guard let id else { return "Uncategorized" }
-        return categories.first(where: { $0.id == id })?.name ?? "Uncategorized"
+        return categoryById[id]?.name ?? "Uncategorized"
     }
 
     func categoryColor(for id: UUID?) -> Color {
         guard let id,
-              let hex = categories.first(where: { $0.id == id })?.colorHex,
+              let hex = categoryById[id]?.colorHex,
               let color = Color(hex: hex) else {
             return .gray
         }
@@ -448,6 +690,7 @@ final class LocalDataStore: ObservableObject {
         if !addedEvents.isEmpty {
             changedSessionIds = SessionManager.shared.updateSessions(&sessions, with: addedEvents)
             sessions.sort { $0.startTime < $1.startTime }
+            rebuildSessionIndices()
         }
 
         if let latestScanned = newEvents.last?.timestamp {
@@ -481,6 +724,7 @@ final class LocalDataStore: ObservableObject {
         if !addedEvents.isEmpty {
             changedSessionIds = SessionManager.shared.updateSessions(&sessions, with: addedEvents)
             sessions.sort { $0.startTime < $1.startTime }
+            rebuildSessionIndices()
         }
 
         if let latestScanned = newEvents.last?.timestamp {
@@ -502,6 +746,7 @@ final class LocalDataStore: ObservableObject {
     func updateSessionCategory(sessionId: UUID, categoryId: UUID?) {
         guard let index = sessions.firstIndex(where: { $0.id == sessionId }) else { return }
         sessions[index].categoryId = categoryId
+        indexUpdate(session: sessions[index])
         persist(.immediate)
     }
 
@@ -582,10 +827,12 @@ final class LocalDataStore: ObservableObject {
 
     private func reevaluateSessions(sessionIds: Set<UUID>) {
         guard !sessionIds.isEmpty else { return }
+        var updatedSessionIds: Set<UUID> = []
         for index in sessions.indices where sessionIds.contains(sessions[index].id) {
             if sessions[index].isIdle {
                 sessions[index].categoryId = nil
                 removeRuleMatch(for: sessions[index].id)
+                updatedSessionIds.insert(sessions[index].id)
                 continue
             }
 
@@ -603,6 +850,13 @@ final class LocalDataStore: ObservableObject {
             }
 
             upsertRuleMatch(explicitRuleMatch, for: sessions[index].id)
+            updatedSessionIds.insert(sessions[index].id)
+        }
+        // Update indices for modified sessions
+        for sessionId in updatedSessionIds {
+            if let index = sessions.firstIndex(where: { $0.id == sessionId }) {
+                indexUpdate(session: sessions[index])
+            }
         }
     }
 
