@@ -2,7 +2,7 @@
   "id": "judgechronos",
   "title": "Judge Chronos",
   "group_id": "group-macos",
-  "platform_tag": "macOS",
+  "platform_tag": ["macOS"],
   "status": "coming_soon",
   "description": "A time judge with no chill: it inspects your app habits, names your procrastination dragons, and cross-examines your tab hoarding under bright fluorescent lights.",
   "vibe_tone": "cyan",
