@@ -4,25 +4,15 @@ final class RulesEngine {
     static let shared = RulesEngine()
     
     func evaluate(session: Session, rules: [Rule]) -> RuleMatch? {
-        // 1. Sort rules by priority (Descending: 100 before 1)
-        let sortedRules = rules
-            .filter { $0.isEnabled }
-            .sorted { $0.priority > $1.priority }
-        
-        // 2. Iterate and find first match
-        for rule in sortedRules {
-            if matches(rule: rule, session: session) {
-                // Return a match object describing what happened
-                return RuleMatch(
-                    id: UUID(),
-                    ruleId: rule.id,
-                    sessionId: session.id,
-                    timestamp: Date(),
-                    appliedChanges: describeChanges(rule: rule)
-                )
-            }
+        if let evaluation = RuleMatcher.shared.evaluate(session: session, rules: rules) {
+            return RuleMatch(
+                id: UUID(),
+                ruleId: evaluation.rule.id,
+                sessionId: session.id,
+                timestamp: Date(),
+                appliedChanges: "\(describeChanges(rule: evaluation.rule)) [\(evaluation.reason)]"
+            )
         }
-        
         return nil
     }
     
@@ -48,30 +38,6 @@ final class RulesEngine {
         if rule.markAsPrivate {
             session.isPrivate = true
         }
-    }
-    
-    private func matches(rule: Rule, session: Session) -> Bool {
-        // App Name Match (Case insensitive contains or exact)
-        // Using "Pattern" as simple substring match for MVP. Regex can come later.
-        if let appPattern = rule.appNamePattern, !appPattern.isEmpty {
-            if !session.sourceApp.localizedCaseInsensitiveContains(appPattern) {
-                return false
-            }
-        }
-        
-        // Duration Match
-        if let minDuration = rule.minDuration {
-            if session.duration < minDuration {
-                return false
-            }
-        }
-        
-        // Bundle ID & Window Title (Not fully supported in Session yet, logic placeholder)
-        // To support Window Title, Session needs to know about it. RawEvent has it?
-        // RawEvent has windowTitle, but Session aggregates multiple.
-        // For now, we skip Window Title unless we aggregate it into Session.
-        
-        return true
     }
     
     private func describeChanges(rule: Rule) -> String {

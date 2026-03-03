@@ -1,4 +1,41 @@
 import Foundation
+
+#if APPSTORE
+enum KnowledgeCReaderError: Error {
+    case databaseNotFound(searchedPaths: [String])
+    case permissionDenied(path: String?)
+    case databaseUnreadable(path: String, underlying: Error)
+    case queryFailed(Error)
+    case unsupportedInAppStore
+}
+
+final class KnowledgeCReader {
+    static let shared = KnowledgeCReader()
+
+    static let macAbsoluteTimeIntervalSince1970: TimeInterval = 978307200
+
+    func fetchEvents(since _: Date?) throws -> [RawEvent] {
+        throw KnowledgeCReaderError.unsupportedInAppStore
+    }
+
+    func fetchEvents(since _: Date?, databasePath _: String, searchedPaths _: [String] = []) throws -> [RawEvent] {
+        throw KnowledgeCReaderError.unsupportedInAppStore
+    }
+
+    static func macAbsoluteToDate(_ value: Double) -> Date {
+        Date(timeIntervalSince1970: value + macAbsoluteTimeIntervalSince1970)
+    }
+
+    static func toTimeInterval(_ value: Any?) -> Double? {
+        guard let value else { return nil }
+        if let numeric = value as? Double { return numeric }
+        if let numeric = value as? Int64 { return Double(numeric) }
+        if let numeric = value as? Int { return Double(numeric) }
+        if let numeric = value as? NSNumber { return numeric.doubleValue }
+        return nil
+    }
+}
+#else
 import SQLite3
 
 enum KnowledgeCReaderError: Error {
@@ -10,10 +47,10 @@ enum KnowledgeCReaderError: Error {
 
 final class KnowledgeCReader {
     static let shared = KnowledgeCReader()
-    
+
     // CoreBiome uses a different reference date (Jan 1 2001)
     static let macAbsoluteTimeIntervalSince1970: TimeInterval = 978307200
-    
+
     private let locator = KnowledgeCDatabaseLocator()
 
     private static func isPermissionDenied(_ error: Error) -> Bool {
@@ -26,14 +63,17 @@ final class KnowledgeCReader {
     
     func fetchEvents(since lastImport: Date?) throws -> [RawEvent] {
         let resolved = locator.resolve()
-        let databasePath = resolved.path
+        return try fetchEvents(since: lastImport, databasePath: resolved.path, searchedPaths: resolved.searchedPaths)
+    }
+
+    func fetchEvents(since lastImport: Date?, databasePath: String, searchedPaths: [String] = []) throws -> [RawEvent] {
         
         do {
             var db: OpaquePointer?
             guard sqlite3_open_v2(databasePath, &db, SQLITE_OPEN_READONLY, nil) == SQLITE_OK, let db else {
                 let errorText = String(cString: sqlite3_errmsg(db))
                 if errorText.localizedCaseInsensitiveContains("no such file") {
-                    throw KnowledgeCReaderError.databaseNotFound(searchedPaths: resolved.searchedPaths)
+                    throw KnowledgeCReaderError.databaseNotFound(searchedPaths: searchedPaths)
                 }
                 if errorText.localizedCaseInsensitiveContains("not authorized")
                     || errorText.localizedCaseInsensitiveContains("authorization denied")
@@ -168,3 +208,4 @@ private struct KnowledgeCDatabaseLocator {
         return (searchedPaths.first ?? URL(fileURLWithPath: homeDirectoryPath).appendingPathComponent(relativePath).path, searchedPaths)
     }
 }
+#endif

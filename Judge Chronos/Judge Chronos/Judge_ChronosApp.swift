@@ -8,6 +8,7 @@ struct Judge_ChronosApp: App {
 
     init() {
         let store = LocalDataStore.shared
+        _ = DonationService.shared
         // In SwiftUI App lifecycle, StateObject init is tricky if trying to inject self.
         // But here we just use the shared instance.
         _dataStore = StateObject(wrappedValue: store)

@@ -26,13 +26,98 @@ struct Session: Identifiable, Hashable, Codable {
     var endTime: Date
     var duration: TimeInterval { endTime.timeIntervalSince(startTime) }
     var sourceApp: String
+    var bundleId: String?
+    var lastWindowTitle: String?
+    var windowTitleSamples: [String]
+    var overlappingMeetingIds: [String]
     var rawEventIds: [UUID]
     var projectId: UUID?
+    var inferredProjectId: UUID?
+    var inferenceConfidence: Double
     var categoryId: UUID?
     var tagIds: Set<UUID>
     var note: String?
     var isPrivate: Bool
     var isIdle: Bool
+
+    init(
+        id: UUID,
+        startTime: Date,
+        endTime: Date,
+        sourceApp: String,
+        bundleId: String? = nil,
+        lastWindowTitle: String? = nil,
+        windowTitleSamples: [String] = [],
+        overlappingMeetingIds: [String] = [],
+        rawEventIds: [UUID],
+        projectId: UUID? = nil,
+        inferredProjectId: UUID? = nil,
+        inferenceConfidence: Double = 0,
+        categoryId: UUID? = nil,
+        tagIds: Set<UUID> = [],
+        note: String? = nil,
+        isPrivate: Bool = false,
+        isIdle: Bool
+    ) {
+        self.id = id
+        self.startTime = startTime
+        self.endTime = endTime
+        self.sourceApp = sourceApp
+        self.bundleId = bundleId
+        self.lastWindowTitle = lastWindowTitle
+        self.windowTitleSamples = windowTitleSamples
+        self.overlappingMeetingIds = overlappingMeetingIds
+        self.rawEventIds = rawEventIds
+        self.projectId = projectId
+        self.inferredProjectId = inferredProjectId
+        self.inferenceConfidence = inferenceConfidence
+        self.categoryId = categoryId
+        self.tagIds = tagIds
+        self.note = note
+        self.isPrivate = isPrivate
+        self.isIdle = isIdle
+    }
+
+    enum CodingKeys: String, CodingKey {
+        case id
+        case startTime
+        case endTime
+        case sourceApp
+        case bundleId
+        case lastWindowTitle
+        case windowTitleSamples
+        case overlappingMeetingIds
+        case rawEventIds
+        case projectId
+        case inferredProjectId
+        case inferenceConfidence
+        case categoryId
+        case tagIds
+        case note
+        case isPrivate
+        case isIdle
+    }
+
+    init(from decoder: Decoder) throws {
+        let container = try decoder.container(keyedBy: CodingKeys.self)
+        id = try container.decode(UUID.self, forKey: .id)
+        startTime = try container.decode(Date.self, forKey: .startTime)
+        endTime = try container.decode(Date.self, forKey: .endTime)
+        sourceApp = try container.decode(String.self, forKey: .sourceApp)
+        bundleId = try container.decodeIfPresent(String.self, forKey: .bundleId)
+        lastWindowTitle = try container.decodeIfPresent(String.self, forKey: .lastWindowTitle)
+        windowTitleSamples = try container.decodeIfPresent([String].self, forKey: .windowTitleSamples) ?? []
+        overlappingMeetingIds = try container.decodeIfPresent([String].self, forKey: .overlappingMeetingIds) ?? []
+        rawEventIds = try container.decodeIfPresent([UUID].self, forKey: .rawEventIds) ?? []
+        projectId = try container.decodeIfPresent(UUID.self, forKey: .projectId)
+        inferredProjectId = try container.decodeIfPresent(UUID.self, forKey: .inferredProjectId)
+        inferenceConfidence = try container.decodeIfPresent(Double.self, forKey: .inferenceConfidence) ?? 0
+        categoryId = try container.decodeIfPresent(UUID.self, forKey: .categoryId)
+        tagIds = try container.decodeIfPresent(Set<UUID>.self, forKey: .tagIds) ?? []
+        note = try container.decodeIfPresent(String.self, forKey: .note)
+        isPrivate = try container.decodeIfPresent(Bool.self, forKey: .isPrivate) ?? false
+        isIdle = try container.decodeIfPresent(Bool.self, forKey: .isIdle) ?? false
+    }
 }
 
 struct Project: Identifiable, Codable, Hashable {
@@ -94,7 +179,6 @@ struct Rule: Identifiable, Codable, Hashable {
     
     // Legacy support for pattern match in RulesView
     var pattern: String { appNamePattern ?? "" }
-    var categoryId: UUID { targetCategoryId ?? UUID() }
 }
 
 struct ExclusionRule: Identifiable, Codable, Hashable {
@@ -142,7 +226,7 @@ struct UserPreferences: Codable, Hashable {
         weeklyRecapEnabled: true,
         goalNudgesEnabled: false,
         emailSummaryEnabled: false,
-        calendarIntegrationEnabled: false,
+        calendarIntegrationEnabled: true,
         iCloudBackupEnabled: false,
         lastImportTimestamp: nil,
         lastImportHash: nil
@@ -165,6 +249,28 @@ struct LocalData: Codable {
     var tags: [Tag] = []
     var ruleMatches: [RuleMatch] = []
     var contextEvents: [ContextEvent] = []
+
+    // Transient migration payloads from old JSON versions.
+    private(set) var migratedRawEvents: [RawEvent] = []
+    private(set) var migratedSessions: [Session] = []
+    private(set) var migratedRuleMatches: [RuleMatch] = []
+    private(set) var migratedContextEvents: [ContextEvent] = []
+
+    enum CodingKeys: String, CodingKey {
+        case categories
+        case rules
+        case assignments
+        case exclusions
+        case focusSessions
+        case goals
+        case preferences
+        case rawEvents
+        case sessions
+        case projects
+        case tags
+        case ruleMatches
+        case contextEvents
+    }
 
     init(
         categories: [Category] = [],
@@ -194,6 +300,10 @@ struct LocalData: Codable {
         self.tags = tags
         self.ruleMatches = ruleMatches
         self.contextEvents = contextEvents
+        self.migratedRawEvents = rawEvents
+        self.migratedSessions = sessions
+        self.migratedRuleMatches = ruleMatches
+        self.migratedContextEvents = contextEvents
     }
 
     init(from decoder: Decoder) throws {
@@ -206,13 +316,36 @@ struct LocalData: Codable {
         goals = try container.decodeIfPresent([Goal].self, forKey: .goals) ?? []
         preferences = try container.decodeIfPresent(UserPreferences.self, forKey: .preferences) ?? .default
         
-        // Phase 0: Decode new models
-        rawEvents = try container.decodeIfPresent([RawEvent].self, forKey: .rawEvents) ?? []
-        sessions = try container.decodeIfPresent([Session].self, forKey: .sessions) ?? []
+        // Event-heavy payloads are decoded for migration but not re-encoded to JSON.
+        let decodedRaw = try container.decodeIfPresent([RawEvent].self, forKey: .rawEvents) ?? []
+        let decodedSessions = try container.decodeIfPresent([Session].self, forKey: .sessions) ?? []
+        let decodedRuleMatches = try container.decodeIfPresent([RuleMatch].self, forKey: .ruleMatches) ?? []
+        let decodedContextEvents = try container.decodeIfPresent([ContextEvent].self, forKey: .contextEvents) ?? []
+
+        rawEvents = []
+        sessions = []
         projects = try container.decodeIfPresent([Project].self, forKey: .projects) ?? []
         tags = try container.decodeIfPresent([Tag].self, forKey: .tags) ?? []
-        ruleMatches = try container.decodeIfPresent([RuleMatch].self, forKey: .ruleMatches) ?? []
-        contextEvents = try container.decodeIfPresent([ContextEvent].self, forKey: .contextEvents) ?? []
+        ruleMatches = []
+        contextEvents = []
+
+        migratedRawEvents = decodedRaw
+        migratedSessions = decodedSessions
+        migratedRuleMatches = decodedRuleMatches
+        migratedContextEvents = decodedContextEvents
+    }
+
+    func encode(to encoder: Encoder) throws {
+        var container = encoder.container(keyedBy: CodingKeys.self)
+        try container.encode(categories, forKey: .categories)
+        try container.encode(rules, forKey: .rules)
+        try container.encode(assignments, forKey: .assignments)
+        try container.encode(exclusions, forKey: .exclusions)
+        try container.encode(focusSessions, forKey: .focusSessions)
+        try container.encode(goals, forKey: .goals)
+        try container.encode(preferences, forKey: .preferences)
+        try container.encode(projects, forKey: .projects)
+        try container.encode(tags, forKey: .tags)
     }
 }
 

@@ -69,7 +69,7 @@ final class ActivityViewModel: ObservableObject {
                 let endOfDay = Calendar.current.date(byAdding: .day, value: 1, to: startOfDay) ?? startOfDay.addingTimeInterval(86400)
                 rawEvents = dataStore.events(from: startOfDay, to: endOfDay)
             }
-            if dataStore.preferences.calendarIntegrationEnabled {
+            if calendarService.hasAccess {
                 let calendarEvents = try calendarActivityEvents(
                     from: rangeEnabled ? normalizedRange().start : selectedDate,
                     to: rangeEnabled ? normalizedRange().end : selectedDate
@@ -77,7 +77,11 @@ final class ActivityViewModel: ObservableObject {
                 rawEvents.append(contentsOf: calendarEvents)
             }
             if rawEvents.isEmpty, dataStore.rawEvents.isEmpty, dataStore.sessions.isEmpty {
-                errorMessage = "No sessions imported yet. Press Refresh after granting Full Disk Access."
+                if dataStore.activityCapabilities.requiresFullDiskAccess {
+                    errorMessage = "No sessions imported yet. Press Refresh after granting Full Disk Access."
+                } else {
+                    errorMessage = "No sessions recorded yet. Keep using your Mac and press Refresh."
+                }
             } else {
                 errorMessage = nil
             }
@@ -89,18 +93,24 @@ final class ActivityViewModel: ObservableObject {
             lastRefresh = Date()
         } catch KnowledgeCReaderError.databaseNotFound(let searchedPaths) {
             _ = searchedPaths
-            showingOnboarding = true
-            errorMessage = "Activity database not found yet. Grant Full Disk Access, relaunch Judge Chronos, then press Refresh."
+            showingOnboarding = dataStore.activityCapabilities.requiresFullDiskAccess
+            errorMessage = dataStore.activityCapabilities.requiresFullDiskAccess
+                ? "Activity database not found yet. Grant Full Disk Access, relaunch Judge Chronos, then press Refresh."
+                : "Activity source unavailable."
             events = []
         } catch KnowledgeCReaderError.permissionDenied(let path) {
             _ = path
-            showingOnboarding = true
-            errorMessage = "Full Disk Access is required for macOS activity data. Open Settings > Privacy & Security > Full Disk Access, enable Judge Chronos, relaunch, then press Refresh."
+            showingOnboarding = dataStore.activityCapabilities.requiresFullDiskAccess
+            errorMessage = dataStore.activityCapabilities.requiresFullDiskAccess
+                ? "Full Disk Access is required for macOS activity data. Open Settings > Privacy & Security > Full Disk Access, enable Judge Chronos, relaunch, then press Refresh."
+                : "Activity source permission denied."
             events = []
         } catch KnowledgeCReaderError.databaseUnreadable(let path, let error) {
             _ = (path, error)
-            showingOnboarding = true
-            errorMessage = "Could not open the macOS activity database. Confirm Full Disk Access and relaunch Judge Chronos."
+            showingOnboarding = dataStore.activityCapabilities.requiresFullDiskAccess
+            errorMessage = dataStore.activityCapabilities.requiresFullDiskAccess
+                ? "Could not open the macOS activity database. Confirm Full Disk Access and relaunch Judge Chronos."
+                : "Could not open activity source."
             events = []
         } catch KnowledgeCReaderError.queryFailed(let error) {
             showingOnboarding = false
@@ -282,7 +292,7 @@ final class ActivityViewModel: ObservableObject {
 
             var currentRaw = dataStore.events(from: startOfWeek, to: endOfWeek)
             var previousRaw = dataStore.events(from: previousStart, to: previousEnd)
-            if dataStore.preferences.calendarIntegrationEnabled {
+            if calendarService.hasAccess {
                 currentRaw.append(contentsOf: try calendarActivityEvents(from: startOfWeek, to: endOfWeek))
                 previousRaw.append(contentsOf: try calendarActivityEvents(from: previousStart, to: previousEnd))
             }

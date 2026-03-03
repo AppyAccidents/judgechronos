@@ -40,18 +40,23 @@ final class SessionManager {
     }
     
     private func createSession(from event: RawEvent) -> Session {
-        return Session(
+        Session(
             id: UUID(),
             startTime: event.timestamp,
             endTime: event.timestamp.addingTimeInterval(event.duration),
             sourceApp: event.appName,
+            bundleId: event.bundleId,
+            lastWindowTitle: event.windowTitle,
+            windowTitleSamples: event.windowTitle.map { [$0] } ?? [],
+            overlappingMeetingIds: [],
             rawEventIds: [event.id],
             projectId: nil,
+            inferredProjectId: nil,
+            inferenceConfidence: 0,
             categoryId: nil,
             tagIds: [],
             note: nil,
             isPrivate: false,
-            // If raw event source is idle, mark session as idle
             isIdle: event.source == .idle
         )
     }
@@ -72,59 +77,38 @@ final class SessionManager {
         return gap <= mergeThreshold
     }
     
-    func updateSessions(_ sessions: inout [Session], with newRawEvents: [RawEvent], rules: [Rule]) -> [RuleMatch] {
-        // 1. Sort new events
+    func updateSessions(_ sessions: inout [Session], with newRawEvents: [RawEvent]) -> Set<UUID> {
         let sortedNew = newRawEvents.sorted { $0.timestamp < $1.timestamp }
         guard !sortedNew.isEmpty else { return [] }
-        
-        // 2. Try to merge first new event into the last existing session
+
+        var changedSessionIds: Set<UUID> = []
         var remainingEvents = sortedNew
-        
+
         if var lastSession = sessions.last, let firstEvent = remainingEvents.first {
             if canMerge(firstEvent, into: lastSession) {
-                // Determine if we need to update the mutable copy in the array
-                // Update session end time and events
                 lastSession.endTime = firstEvent.timestamp.addingTimeInterval(firstEvent.duration)
                 lastSession.rawEventIds.append(firstEvent.id)
-                
-                // Replace the last session in the array with updated version
-                // Re-evaluate rules on the updated session (in case duration change triggers rule)
-                // Note: We need access to rules here. For now, we'll fetch from LocalDataStore.shared? 
-                // Better Design: Pass rules into updateSessions.
-                
+                if let title = firstEvent.windowTitle, !title.isEmpty {
+                    lastSession.lastWindowTitle = title
+                    if !lastSession.windowTitleSamples.contains(title) {
+                        lastSession.windowTitleSamples.append(title)
+                    }
+                }
+                if let bundleId = firstEvent.bundleId {
+                    lastSession.bundleId = bundleId
+                }
                 sessions[sessions.count - 1] = lastSession
-                
-                // Remove this event from processing list
+                changedSessionIds.insert(lastSession.id)
                 remainingEvents.removeFirst()
             }
         }
-        
-        // 3. Derive new sessions from remaining events
+
         let newSessions = deriveSessions(from: remainingEvents)
-        
-        // 4. Update the input sessions
         sessions.append(contentsOf: newSessions)
-        
-        // 5. Apply rules to newly added/modified sessions
-        // For efficiency, we could track *which* sessions changed, but for now we can scan.
-        // Or better: The caller calls applyRules() after updateSessions().
-        // Let's integrate it here to be safe and atomic.
-        return applyRules(to: &sessions, rules: rules)
-    }
-    
-    // START Phase 3 Integration
-    func applyRules(to sessions: inout [Session], rules: [Rule]) -> [RuleMatch] {
-        var matches: [RuleMatch] = []
-        for i in 0..<sessions.count {
-            // Only apply rules if no manual category is set (Strict "Don't Lie" Policy)
-            // Or if we define that rules can overwrite empty fields.
-            if sessions[i].categoryId == nil {
-                if let match = RulesEngine.shared.evaluate(session: sessions[i], rules: rules) {
-                    RulesEngine.shared.apply(match: match, to: &sessions[i], using: rules)
-                    matches.append(match)
-                }
-            }
+        for session in newSessions {
+            changedSessionIds.insert(session.id)
         }
-        return matches
+
+        return changedSessionIds
     }
 }

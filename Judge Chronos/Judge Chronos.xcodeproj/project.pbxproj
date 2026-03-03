@@ -7,7 +7,9 @@
 	objects = {
 
 /* Begin PBXBuildFile section */
+		4CE1A943E3C42FB721B1EC52 /* Cocoa.framework in Frameworks */ = {isa = PBXBuildFile; fileRef = 4B08538F492BE8EB9F1418AB /* Cocoa.framework */; };
 		E73C10612E29479D00629BD4 /* SQLite in Frameworks */ = {isa = PBXBuildFile; productRef = E73C10602E29479D00629BD4 /* SQLite */; };
+		F40A3A2B8C1B34A30B29DA60 /* SQLite in Frameworks */ = {isa = PBXBuildFile; productRef = E73C10602E29479D00629BD4 /* SQLite */; };
 /* End PBXBuildFile section */
 
 /* Begin PBXContainerItemProxy section */
@@ -28,6 +30,8 @@
 /* End PBXContainerItemProxy section */
 
 /* Begin PBXFileReference section */
+		00700FCCFCD17F4379297994 /* Judge Chronos MAS.app */ = {isa = PBXFileReference; explicitFileType = wrapper.application; includeInIndex = 0; path = "Judge Chronos MAS.app"; sourceTree = BUILT_PRODUCTS_DIR; };
+		4B08538F492BE8EB9F1418AB /* Cocoa.framework */ = {isa = PBXFileReference; lastKnownFileType = wrapper.framework; name = Cocoa.framework; path = Platforms/MacOSX.platform/Developer/SDKs/MacOSX15.0.sdk/System/Library/Frameworks/Cocoa.framework; sourceTree = DEVELOPER_DIR; };
 		E73C10272E2946C200629BD4 /* Judge Chronos.app */ = {isa = PBXFileReference; explicitFileType = wrapper.application; includeInIndex = 0; path = "Judge Chronos.app"; sourceTree = BUILT_PRODUCTS_DIR; };
 		E73C10352E2946C300629BD4 /* Judge ChronosTests.xctest */ = {isa = PBXFileReference; explicitFileType = wrapper.cfbundle; includeInIndex = 0; path = "Judge ChronosTests.xctest"; sourceTree = BUILT_PRODUCTS_DIR; };
 		E73C103F2E2946C300629BD4 /* Judge ChronosUITests.xctest */ = {isa = PBXFileReference; explicitFileType = wrapper.cfbundle; includeInIndex = 0; path = "Judge ChronosUITests.xctest"; sourceTree = BUILT_PRODUCTS_DIR; };
@@ -36,22 +40,37 @@
 /* Begin PBXFileSystemSynchronizedRootGroup section */
 		E73C10292E2946C200629BD4 /* Judge Chronos */ = {
 			isa = PBXFileSystemSynchronizedRootGroup;
+			exceptions = (
+			);
 			path = "Judge Chronos";
 			sourceTree = "<group>";
 		};
 		E73C10382E2946C300629BD4 /* Judge ChronosTests */ = {
 			isa = PBXFileSystemSynchronizedRootGroup;
+			exceptions = (
+			);
 			path = "Judge ChronosTests";
 			sourceTree = "<group>";
 		};
 		E73C10422E2946C300629BD4 /* Judge ChronosUITests */ = {
 			isa = PBXFileSystemSynchronizedRootGroup;
+			exceptions = (
+			);
 			path = "Judge ChronosUITests";
 			sourceTree = "<group>";
 		};
 /* End PBXFileSystemSynchronizedRootGroup section */
 
 /* Begin PBXFrameworksBuildPhase section */
+		E669CE918120823FEC658F4E /* Frameworks */ = {
+			isa = PBXFrameworksBuildPhase;
+			buildActionMask = 2147483647;
+			files = (
+				4CE1A943E3C42FB721B1EC52 /* Cocoa.framework in Frameworks */,
+				F40A3A2B8C1B34A30B29DA60 /* SQLite in Frameworks */,
+			);
+			runOnlyForDeploymentPostprocessing = 0;
+		};
 		E73C10242E2946C200629BD4 /* Frameworks */ = {
 			isa = PBXFrameworksBuildPhase;
 			buildActionMask = 2147483647;
@@ -77,6 +96,22 @@
 /* End PBXFrameworksBuildPhase section */
 
 /* Begin PBXGroup section */
+		2CC39C91178C7DE420F9FDBD /* OS X */ = {
+			isa = PBXGroup;
+			children = (
+				4B08538F492BE8EB9F1418AB /* Cocoa.framework */,
+			);
+			name = "OS X";
+			sourceTree = "<group>";
+		};
+		96C866B1A791CD30C3AF3AF3 /* Frameworks */ = {
+			isa = PBXGroup;
+			children = (
+				2CC39C91178C7DE420F9FDBD /* OS X */,
+			);
+			name = Frameworks;
+			sourceTree = "<group>";
+		};
 		E73C101E2E2946C200629BD4 = {
 			isa = PBXGroup;
 			children = (
@@ -84,6 +119,7 @@
 				E73C10382E2946C300629BD4 /* Judge ChronosTests */,
 				E73C10422E2946C300629BD4 /* Judge ChronosUITests */,
 				E73C10282E2946C200629BD4 /* Products */,
+				96C866B1A791CD30C3AF3AF3 /* Frameworks */,
 			);
 			sourceTree = "<group>";
 		};
@@ -93,6 +129,7 @@
 				E73C10272E2946C200629BD4 /* Judge Chronos.app */,
 				E73C10352E2946C300629BD4 /* Judge ChronosTests.xctest */,
 				E73C103F2E2946C300629BD4 /* Judge ChronosUITests.xctest */,
+				00700FCCFCD17F4379297994 /* Judge Chronos MAS.app */,
 			);
 			name = Products;
 			sourceTree = "<group>";
@@ -100,6 +137,29 @@
 /* End PBXGroup section */
 
 /* Begin PBXNativeTarget section */
+		68788B88875B74283F15DF03 /* Judge Chronos MAS */ = {
+			isa = PBXNativeTarget;
+			buildConfigurationList = EE77C556259DEE3899961D62 /* Build configuration list for PBXNativeTarget "Judge Chronos MAS" */;
+			buildPhases = (
+				3BE47200A857EFBEB879FAA9 /* Sources */,
+				E669CE918120823FEC658F4E /* Frameworks */,
+				4D9A0B12B142D1E706FCB21E /* Resources */,
+			);
+			buildRules = (
+			);
+			dependencies = (
+			);
+			fileSystemSynchronizedGroups = (
+				E73C10292E2946C200629BD4 /* Judge Chronos */,
+			);
+			name = "Judge Chronos MAS";
+			packageProductDependencies = (
+				E73C10602E29479D00629BD4 /* SQLite */,
+			);
+			productName = "Judge Chronos MAS";
+			productReference = 00700FCCFCD17F4379297994 /* Judge Chronos MAS.app */;
+			productType = "com.apple.product-type.application";
+		};
 		E73C10262E2946C200629BD4 /* Judge Chronos */ = {
 			isa = PBXNativeTarget;
 			buildConfigurationList = E73C10492E2946C300629BD4 /* Build configuration list for PBXNativeTarget "Judge Chronos" */;
@@ -140,8 +200,6 @@
 				E73C10382E2946C300629BD4 /* Judge ChronosTests */,
 			);
 			name = "Judge ChronosTests";
-			packageProductDependencies = (
-			);
 			productName = "Judge ChronosTests";
 			productReference = E73C10352E2946C300629BD4 /* Judge ChronosTests.xctest */;
 			productType = "com.apple.product-type.bundle.unit-test";
@@ -163,8 +221,6 @@
 				E73C10422E2946C300629BD4 /* Judge ChronosUITests */,
 			);
 			name = "Judge ChronosUITests";
-			packageProductDependencies = (
-			);
 			productName = "Judge ChronosUITests";
 			productReference = E73C103F2E2946C300629BD4 /* Judge ChronosUITests.xctest */;
 			productType = "com.apple.product-type.bundle.ui-testing";
@@ -202,7 +258,7 @@
 			mainGroup = E73C101E2E2946C200629BD4;
 			minimizedProjectReferenceProxies = 1;
 			packageReferences = (
-				E73C105F2E29479D00629BD4 /* XCRemoteSwiftPackageReference "SQLite" */,
+				E73C105F2E29479D00629BD4 /* XCRemoteSwiftPackageReference "SQLite.swift" */,
 			);
 			preferredProjectObjectVersion = 77;
 			productRefGroup = E73C10282E2946C200629BD4 /* Products */;
@@ -212,11 +268,19 @@
 				E73C10262E2946C200629BD4 /* Judge Chronos */,
 				E73C10342E2946C300629BD4 /* Judge ChronosTests */,
 				E73C103E2E2946C300629BD4 /* Judge ChronosUITests */,
+				68788B88875B74283F15DF03 /* Judge Chronos MAS */,
 			);
 		};
 /* End PBXProject section */
 
 /* Begin PBXResourcesBuildPhase section */
+		4D9A0B12B142D1E706FCB21E /* Resources */ = {
+			isa = PBXResourcesBuildPhase;
+			buildActionMask = 2147483647;
+			files = (
+			);
+			runOnlyForDeploymentPostprocessing = 0;
+		};
 		E73C10252E2946C200629BD4 /* Resources */ = {
 			isa = PBXResourcesBuildPhase;
 			buildActionMask = 2147483647;
@@ -241,6 +305,13 @@
 /* End PBXResourcesBuildPhase section */
 
 /* Begin PBXSourcesBuildPhase section */
+		3BE47200A857EFBEB879FAA9 /* Sources */ = {
+			isa = PBXSourcesBuildPhase;
+			buildActionMask = 2147483647;
+			files = (
+			);
+			runOnlyForDeploymentPostprocessing = 0;
+		};
 		E73C10232E2946C200629BD4 /* Sources */ = {
 			isa = PBXSourcesBuildPhase;
 			buildActionMask = 2147483647;
@@ -278,6 +349,72 @@
 /* End PBXTargetDependency section */
 
 /* Begin XCBuildConfiguration section */
+		3DB9826A8C6E38C910446094 /* Release */ = {
+			isa = XCBuildConfiguration;
+			buildSettings = {
+				ASSETCATALOG_COMPILER_APPICON_NAME = AppIcon;
+				ASSETCATALOG_COMPILER_GLOBAL_ACCENT_COLOR_NAME = AccentColor;
+				CODE_SIGN_ENTITLEMENTS = "Judge Chronos/Judge_Chronos_MAS.entitlements";
+				CODE_SIGN_STYLE = Automatic;
+				COMBINE_HIDPI_IMAGES = YES;
+				CURRENT_PROJECT_VERSION = 1;
+				DEAD_CODE_STRIPPING = YES;
+				DEVELOPMENT_TEAM = 56ZVD96SR4;
+				ENABLE_APP_SANDBOX = YES;
+				ENABLE_HARDENED_RUNTIME = YES;
+				ENABLE_PREVIEWS = YES;
+				GENERATE_INFOPLIST_FILE = YES;
+				INFOPLIST_KEY_JCDistributionChannel = mas;
+				INFOPLIST_KEY_NSCALENDARSUSAGEDESCRIPTION = "Judge Chronos uses your calendar to label meeting time in your activity timeline.";
+				INFOPLIST_KEY_NSHumanReadableCopyright = "";
+				LD_RUNPATH_SEARCH_PATHS = (
+					"$(inherited)",
+					"@executable_path/../Frameworks",
+				);
+				MACOSX_DEPLOYMENT_TARGET = 26.0;
+				MARKETING_VERSION = 0.1.0;
+				PRODUCT_BUNDLE_IDENTIFIER = "berkerceylan.Judge-Chronos-MAS";
+				PRODUCT_NAME = "$(TARGET_NAME)";
+				SDKROOT = macosx;
+				SWIFT_ACTIVE_COMPILATION_CONDITIONS = "APPSTORE $(inherited)";
+				SWIFT_EMIT_LOC_STRINGS = YES;
+				SWIFT_VERSION = 5.0;
+			};
+			name = Release;
+		};
+		B5145F1F1D730E1BA3A483F2 /* Debug */ = {
+			isa = XCBuildConfiguration;
+			buildSettings = {
+				ASSETCATALOG_COMPILER_APPICON_NAME = AppIcon;
+				ASSETCATALOG_COMPILER_GLOBAL_ACCENT_COLOR_NAME = AccentColor;
+				CODE_SIGN_ENTITLEMENTS = "Judge Chronos/Judge_Chronos_MAS.entitlements";
+				CODE_SIGN_STYLE = Automatic;
+				COMBINE_HIDPI_IMAGES = YES;
+				CURRENT_PROJECT_VERSION = 1;
+				DEAD_CODE_STRIPPING = YES;
+				DEVELOPMENT_TEAM = 56ZVD96SR4;
+				ENABLE_APP_SANDBOX = YES;
+				ENABLE_HARDENED_RUNTIME = YES;
+				ENABLE_PREVIEWS = YES;
+				GENERATE_INFOPLIST_FILE = YES;
+				INFOPLIST_KEY_JCDistributionChannel = mas;
+				INFOPLIST_KEY_NSCALENDARSUSAGEDESCRIPTION = "Judge Chronos uses your calendar to label meeting time in your activity timeline.";
+				INFOPLIST_KEY_NSHumanReadableCopyright = "";
+				LD_RUNPATH_SEARCH_PATHS = (
+					"$(inherited)",
+					"@executable_path/../Frameworks",
+				);
+				MACOSX_DEPLOYMENT_TARGET = 26.0;
+				MARKETING_VERSION = 0.1.0;
+				PRODUCT_BUNDLE_IDENTIFIER = "berkerceylan.Judge-Chronos-MAS";
+				PRODUCT_NAME = "$(TARGET_NAME)";
+				SDKROOT = macosx;
+				SWIFT_ACTIVE_COMPILATION_CONDITIONS = "DEBUG APPSTORE $(inherited)";
+				SWIFT_EMIT_LOC_STRINGS = YES;
+				SWIFT_VERSION = 5.0;
+			};
+			name = Debug;
+		};
 		E73C10472E2946C300629BD4 /* Debug */ = {
 			isa = XCBuildConfiguration;
 			buildSettings = {
@@ -417,6 +554,7 @@
 				ENABLE_HARDENED_RUNTIME = YES;
 				ENABLE_PREVIEWS = YES;
 				GENERATE_INFOPLIST_FILE = YES;
+				INFOPLIST_KEY_JCDistributionChannel = direct;
 				INFOPLIST_KEY_NSCALENDARSUSAGEDESCRIPTION = "Judge Chronos uses your calendar to label meeting time in your activity timeline.";
 				INFOPLIST_KEY_NSHumanReadableCopyright = "";
 				LD_RUNPATH_SEARCH_PATHS = (
@@ -447,6 +585,7 @@
 				ENABLE_HARDENED_RUNTIME = YES;
 				ENABLE_PREVIEWS = YES;
 				GENERATE_INFOPLIST_FILE = YES;
+				INFOPLIST_KEY_JCDistributionChannel = direct;
 				INFOPLIST_KEY_NSCALENDARSUSAGEDESCRIPTION = "Judge Chronos uses your calendar to label meeting time in your activity timeline.";
 				INFOPLIST_KEY_NSHumanReadableCopyright = "";
 				LD_RUNPATH_SEARCH_PATHS = (
@@ -573,10 +712,19 @@
 			defaultConfigurationIsVisible = 0;
 			defaultConfigurationName = Release;
 		};
+		EE77C556259DEE3899961D62 /* Build configuration list for PBXNativeTarget "Judge Chronos MAS" */ = {
+			isa = XCConfigurationList;
+			buildConfigurations = (
+				3DB9826A8C6E38C910446094 /* Release */,
+				B5145F1F1D730E1BA3A483F2 /* Debug */,
+			);
+			defaultConfigurationIsVisible = 0;
+			defaultConfigurationName = Release;
+		};
 /* End XCConfigurationList section */
 
 /* Begin XCRemoteSwiftPackageReference section */
-		E73C105F2E29479D00629BD4 /* XCRemoteSwiftPackageReference "SQLite" */ = {
+		E73C105F2E29479D00629BD4 /* XCRemoteSwiftPackageReference "SQLite.swift" */ = {
 			isa = XCRemoteSwiftPackageReference;
 			repositoryURL = "https://github.com/stephencelis/SQLite.swift";
 			requirement = {
@@ -589,7 +737,7 @@
 /* Begin XCSwiftPackageProductDependency section */
 		E73C10602E29479D00629BD4 /* SQLite */ = {
 			isa = XCSwiftPackageProductDependency;
-			package = E73C105F2E29479D00629BD4 /* XCRemoteSwiftPackageReference "SQLite" */;
+			package = E73C105F2E29479D00629BD4 /* XCRemoteSwiftPackageReference "SQLite.swift" */;
 			productName = SQLite;
 		};
 /* End XCSwiftPackageProductDependency section */

@@ -136,7 +136,20 @@ struct TimelineView: View {
                 PrivateModeBannerView()
             }
 
-            if viewModel.showingOnboarding {
+            if !dataStore.activityCapabilities.requiresFullDiskAccess {
+                HStack {
+                    Image(systemName: "shield")
+                    Text("Privacy-safe automatic tracking: frontmost app, window title, and meetings.")
+                    Spacer()
+                }
+                .font(.subheadline)
+                .foregroundColor(.secondary)
+                .padding(10)
+                .background(AppTheme.Colors.subtleSurface)
+                .cornerRadius(8)
+            }
+
+            if viewModel.showingOnboarding && dataStore.activityCapabilities.requiresFullDiskAccess {
                 OnboardingCardView()
             }
 
@@ -201,6 +214,14 @@ struct TimelineView: View {
             if accessibilityReader.isTrusted {
                 accessibilityReader.startPolling(dataStore: dataStore)
                 idleMonitor.startMonitoring(dataStore: dataStore)
+            }
+            Task {
+                if !CalendarService.shared.hasAccess {
+                    _ = try? await CalendarService.shared.requestAccess()
+                }
+                await MainActor.run {
+                    viewModel.refresh()
+                }
             }
         }
         .onChange(of: dataStore.assignments) { _, _ in
@@ -376,7 +397,7 @@ struct StatusHeaderView: View {
         if dataStore.preferences.privateModeEnabled {
             return "Private mode enabled"
         }
-        if viewModel.showingOnboarding {
+        if viewModel.showingOnboarding && dataStore.activityCapabilities.requiresFullDiskAccess {
             return "Needs Full Disk Access"
         }
         if viewModel.errorMessage != nil {
@@ -389,7 +410,7 @@ struct StatusHeaderView: View {
         if dataStore.preferences.privateModeEnabled {
             return "eye.slash"
         }
-        if viewModel.showingOnboarding {
+        if viewModel.showingOnboarding && dataStore.activityCapabilities.requiresFullDiskAccess {
             return "exclamationmark.triangle"
         }
         if viewModel.errorMessage != nil {
@@ -400,7 +421,7 @@ struct StatusHeaderView: View {
 
     private var statusColor: Color {
         if dataStore.preferences.privateModeEnabled { return AppTheme.Colors.statusWarning }
-        if viewModel.showingOnboarding { return AppTheme.Colors.statusWarning }
+        if viewModel.showingOnboarding && dataStore.activityCapabilities.requiresFullDiskAccess { return AppTheme.Colors.statusWarning }
         if viewModel.errorMessage != nil { return AppTheme.Colors.statusError }
         return AppTheme.Colors.statusReady
     }
@@ -654,6 +675,9 @@ struct TimelineRow: View {
     @EnvironmentObject private var dataStore: LocalDataStore
 
     let event: ActivityEvent
+    private var session: Session? {
+        dataStore.sessions.first(where: { $0.id == event.id })
+    }
 
     var body: some View {
         VStack(alignment: .leading, spacing: 6) {
@@ -677,7 +701,7 @@ struct TimelineRow: View {
                         .foregroundColor(.secondary)
                 } else {
                     Picker("Category", selection: assignmentBinding(for: event)) {
-                        Text("Auto (rules)").tag(UUID?.none)
+                        Text("Auto").tag(UUID?.none)
                         ForEach(dataStore.categories) { category in
                             Text(category.name).tag(Optional(category.id))
                         }
@@ -698,6 +722,17 @@ struct TimelineRow: View {
                                 .font(.footnote)
                                 .foregroundColor(.secondary)
                         }
+                    }
+
+                    if let session, !session.overlappingMeetingIds.isEmpty {
+                        Text("Meeting context")
+                            .font(.footnote)
+                            .foregroundColor(AppTheme.Colors.secondary)
+                    }
+                    if let session {
+                        Text("Confidence \(Int(session.inferenceConfidence * 100))%")
+                            .font(.footnote)
+                            .foregroundColor(.secondary)
                     }
                 }
 
@@ -762,11 +797,15 @@ struct TimelineRow: View {
 }
 
 struct EmptyStateView: View {
+    @EnvironmentObject private var dataStore: LocalDataStore
+
     var body: some View {
         VStack(alignment: .leading, spacing: 6) {
             Text("No activity found for this day.")
                 .font(.headline)
-            Text("If you just granted Full Disk Access, press Refresh. Otherwise, your Mac may not have recorded app usage yet.")
+            Text(dataStore.activityCapabilities.requiresFullDiskAccess
+                 ? "If you just granted Full Disk Access, press Refresh. Otherwise, your Mac may not have recorded app usage yet."
+                 : "Keep using your apps and press Refresh to capture timeline activity.")
                 .foregroundColor(.secondary)
         }
     }
@@ -1352,22 +1391,25 @@ struct SettingsView: View {
     @EnvironmentObject private var viewModel: ActivityViewModel
     @EnvironmentObject private var dataStore: LocalDataStore
     @StateObject private var accessibilityReader = AccessibilityReader.shared
+    @StateObject private var donationService = DonationService.shared
     @State private var exclusionPattern: String = ""
     @State private var goalCategoryId: UUID? = nil
     @State private var goalMinutes: String = "60"
 
     var body: some View {
         Form {
-            Section("Full Disk Access") {
-                Text("Judge Chronos reads your activity data from the system database.")
-                Text("If the toggle is disabled, unlock System Settings and move the app to /Applications.")
-                    .foregroundColor(.secondary)
-                HStack(spacing: 12) {
-                    Button("Open System Settings") {
-                        openFullDiskAccessSettings()
-                    }
-                    Button("Reveal App in Finder") {
-                        revealAppInFinder()
+            if dataStore.activityCapabilities.requiresFullDiskAccess {
+                Section("Full Disk Access") {
+                    Text("Judge Chronos reads your activity data from the system database.")
+                    Text("If the toggle is disabled, unlock System Settings and move the app to /Applications.")
+                        .foregroundColor(.secondary)
+                    HStack(spacing: 12) {
+                        Button("Open System Settings") {
+                            openFullDiskAccessSettings()
+                        }
+                        Button("Reveal App in Finder") {
+                            revealAppInFinder()
+                        }
                     }
                 }
             }
@@ -1388,7 +1430,9 @@ struct SettingsView: View {
                 HStack(alignment: .top) {
                     Text("Full Disk Access")
                     Spacer()
-                    Text("Not directly readable by apps. If activity import fails, enable it for Judge Chronos and relaunch.")
+                    Text(dataStore.activityCapabilities.requiresFullDiskAccess
+                         ? "Not directly readable by apps. If activity import fails, enable it for Judge Chronos and relaunch."
+                         : "Not required in this distribution.")
                         .foregroundColor(.secondary)
                         .multilineTextAlignment(.trailing)
                         .frame(maxWidth: 360, alignment: .trailing)
@@ -1550,30 +1594,64 @@ struct SettingsView: View {
                 }
             }
 
-            Section("Integrations") {
-                Toggle("Calendar/meeting integration", isOn: Binding(
-                    get: { dataStore.preferences.calendarIntegrationEnabled },
-                    set: { newValue in
-                        if newValue {
-                            Task {
-                                do {
-                                    try await CalendarService.shared.requestAccess()
-                                    await MainActor.run {
-                                        dataStore.updatePreferences { $0.calendarIntegrationEnabled = true }
-                                        viewModel.refresh()
-                                    }
-                                } catch {
-                                    await MainActor.run {
-                                        dataStore.updatePreferences { $0.calendarIntegrationEnabled = false }
-                                    }
-                                }
-                            }
-                        } else {
-                            dataStore.updatePreferences { $0.calendarIntegrationEnabled = false }
-                            viewModel.refresh()
+            Section("Support Judge Chronos") {
+                Text("Optional donations. No feature unlock.")
+                    .font(.footnote)
+                    .foregroundColor(.secondary)
+
+                if donationService.products.isEmpty {
+                    Button(donationService.isLoading ? "Loading..." : "Load Donation Options") {
+                        Task {
+                            await donationService.loadProducts()
                         }
                     }
-                ))
+                    .disabled(donationService.isLoading)
+                } else {
+                    ForEach(donationService.products, id: \.id) { product in
+                        HStack {
+                            Text(product.displayName)
+                            Spacer()
+                            Button(product.displayPrice) {
+                                Task {
+                                    await donationService.purchase(productId: product.id)
+                                }
+                            }
+                        }
+                    }
+                }
+
+                if let message = donationService.purchaseMessage {
+                    HStack {
+                        Text(message)
+                            .font(.footnote)
+                            .foregroundColor(.secondary)
+                        Spacer()
+                        Button("Dismiss") {
+                            donationService.clearMessage()
+                        }
+                    }
+                }
+            }
+
+            Section("Integrations") {
+                HStack {
+                    Label(
+                        CalendarService.shared.hasAccess ? "Calendar meeting correlation is active" : "Calendar meeting correlation is not granted",
+                        systemImage: CalendarService.shared.hasAccess ? "checkmark.circle.fill" : "xmark.circle"
+                    )
+                    .foregroundColor(CalendarService.shared.hasAccess ? AppTheme.Colors.statusReady : AppTheme.Colors.statusWarning)
+                    Spacer()
+                    if !CalendarService.shared.hasAccess {
+                        Button("Grant Access") {
+                            Task {
+                                _ = try? await CalendarService.shared.requestAccess()
+                                await MainActor.run {
+                                    viewModel.refresh()
+                                }
+                            }
+                        }
+                    }
+                }
                 Toggle("Email summary (coming soon)", isOn: Binding(
                     get: { dataStore.preferences.emailSummaryEnabled },
                     set: { newValue in
@@ -1598,6 +1676,9 @@ struct SettingsView: View {
         .navigationTitle("Settings")
         .onAppear {
             accessibilityReader.checkPermissions()
+            Task {
+                await donationService.loadProducts()
+            }
         }
     }
 

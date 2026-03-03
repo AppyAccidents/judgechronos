@@ -259,7 +259,7 @@ final class MenuBarDataSource: ObservableObject {
                 let startOfDay = Calendar.current.startOfDay(for: Date())
                 let endOfDay = Calendar.current.date(byAdding: .day, value: 1, to: startOfDay) ?? startOfDay.addingTimeInterval(86_400)
                 var raw = dataStore.events(from: startOfDay, to: endOfDay)
-                if dataStore.preferences.calendarIntegrationEnabled, CalendarService.shared.hasAccess {
+                if CalendarService.shared.hasAccess {
                     let calendarEvents = try CalendarService.shared.fetchEvents(
                         from: startOfDay,
                         to: endOfDay
@@ -287,7 +287,9 @@ final class MenuBarDataSource: ObservableObject {
                 await MainActor.run {
                     events = categorized
                     if categorized.isEmpty, dataStore.rawEvents.isEmpty, dataStore.sessions.isEmpty {
-                        lastError = "No sessions imported yet. Press Refresh after granting Full Disk Access."
+                        lastError = dataStore.activityCapabilities.requiresFullDiskAccess
+                            ? "No sessions imported yet. Press Refresh after granting Full Disk Access."
+                            : "No sessions yet. Keep using your Mac and refresh."
                     } else {
                         lastError = nil
                     }
@@ -296,13 +298,17 @@ final class MenuBarDataSource: ObservableObject {
                 _ = searchedPaths
                 await MainActor.run {
                     events = []
-                    lastError = "Setup required: grant Full Disk Access, relaunch Judge Chronos, then refresh."
+                    lastError = dataStore.activityCapabilities.requiresFullDiskAccess
+                        ? "Setup required: grant Full Disk Access, relaunch Judge Chronos, then refresh."
+                        : "Activity source unavailable."
                 }
             } catch KnowledgeCReaderError.permissionDenied(let path) {
                 _ = path
                 await MainActor.run {
                     events = []
-                    lastError = "Full Disk Access required. Enable access in Privacy & Security, relaunch, then refresh."
+                    lastError = dataStore.activityCapabilities.requiresFullDiskAccess
+                        ? "Full Disk Access required. Enable access in Privacy & Security, relaunch, then refresh."
+                        : "Permission denied for activity source."
                 }
             } catch {
                 await MainActor.run {
