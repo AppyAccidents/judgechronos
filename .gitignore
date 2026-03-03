@@ -3,3 +3,4 @@
 **/*.xcuserdatad/
 **/UserInterfaceState.xcuserstate
 **/project.xcworkspace/xcuserdata/
+.artifacts/
