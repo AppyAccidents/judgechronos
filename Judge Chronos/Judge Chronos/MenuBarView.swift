@@ -40,6 +40,8 @@ struct MenuBarView: View {
 
     @State private var showFocusPicker = false
     @State private var selectedFocusCategory: UUID?
+    @State private var timerProjectId: UUID?
+    @State private var timerDescription = ""
     
     var body: some View {
         VStack(alignment: .leading, spacing: 12) {
@@ -108,6 +110,89 @@ struct MenuBarView: View {
                 .padding(.horizontal, 8)
                 .background(AppTheme.Colors.subtleSurface)
                 .cornerRadius(6)
+            }
+
+            // Manual Timer Section
+            if !dataStore.activeTimers.isEmpty {
+                Divider()
+                ForEach(dataStore.activeTimers) { timer in
+                    HStack {
+                        Image(systemName: "timer")
+                            .foregroundColor(.accentColor)
+                        VStack(alignment: .leading) {
+                            Text(timer.description ?? dataStore.projectName(for: timer.projectId))
+                                .font(.caption)
+                                .fontWeight(.medium)
+                                .lineLimit(1)
+                            Text(Formatting.formatDuration(timer.elapsed))
+                                .font(.caption2)
+                                .monospacedDigit()
+                                .foregroundColor(.secondary)
+                        }
+                        Spacer()
+                        Button("Stop") {
+                            ManualTimerService.shared.stopTimer(id: timer.id, dataStore: dataStore)
+                        }
+                        .controlSize(.mini)
+                    }
+                }
+            }
+
+            // Quick timer start
+            HStack(spacing: 4) {
+                Picker("", selection: $timerProjectId) {
+                    Text("Project").tag(UUID?.none)
+                    ForEach(dataStore.projects.filter { !$0.archived }) { p in
+                        Text(p.name).tag(Optional(p.id))
+                    }
+                }
+                .labelsHidden()
+                .frame(width: 120)
+
+                TextField("Task", text: $timerDescription)
+                    .textFieldStyle(.roundedBorder)
+                    .frame(width: 80)
+
+                Button(action: {
+                    _ = ManualTimerService.shared.startTimer(
+                        dataStore: dataStore,
+                        projectId: timerProjectId,
+                        description: timerDescription.isEmpty ? nil : timerDescription
+                    )
+                    timerDescription = ""
+                }) {
+                    Image(systemName: "play.fill")
+                }
+                .controlSize(.small)
+            }
+
+            // Favorites quick launch
+            if !dataStore.favorites.isEmpty {
+                Divider()
+                Text("Quick Start")
+                    .font(.caption2)
+                    .foregroundColor(.secondary)
+                ForEach(dataStore.favorites.prefix(3)) { fav in
+                    Button(action: {
+                        _ = ManualTimerService.shared.startTimer(
+                            dataStore: dataStore,
+                            projectId: fav.projectId,
+                            activityId: fav.activityId,
+                            description: fav.description,
+                            isBillable: fav.isBillable
+                        )
+                    }) {
+                        HStack {
+                            Image(systemName: "star.fill")
+                                .font(.caption2)
+                                .foregroundColor(.yellow)
+                            Text(fav.description ?? dataStore.projectName(for: fav.projectId))
+                                .font(.caption)
+                                .lineLimit(1)
+                        }
+                    }
+                    .buttonStyle(.plain)
+                }
             }
 
             Divider()

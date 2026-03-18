@@ -39,6 +39,8 @@ struct Session: Identifiable, Hashable, Codable {
     var note: String?
     var isPrivate: Bool
     var isIdle: Bool
+    var activityId: UUID?
+    var isBreak: Bool
 
     init(
         id: UUID,
@@ -57,7 +59,9 @@ struct Session: Identifiable, Hashable, Codable {
         tagIds: Set<UUID> = [],
         note: String? = nil,
         isPrivate: Bool = false,
-        isIdle: Bool
+        isIdle: Bool,
+        activityId: UUID? = nil,
+        isBreak: Bool = false
     ) {
         self.id = id
         self.startTime = startTime
@@ -76,6 +80,8 @@ struct Session: Identifiable, Hashable, Codable {
         self.note = note
         self.isPrivate = isPrivate
         self.isIdle = isIdle
+        self.activityId = activityId
+        self.isBreak = isBreak
     }
 
     enum CodingKeys: String, CodingKey {
@@ -96,6 +102,8 @@ struct Session: Identifiable, Hashable, Codable {
         case note
         case isPrivate
         case isIdle
+        case activityId
+        case isBreak
     }
 
     init(from decoder: Decoder) throws {
@@ -117,6 +125,8 @@ struct Session: Identifiable, Hashable, Codable {
         note = try container.decodeIfPresent(String.self, forKey: .note)
         isPrivate = try container.decodeIfPresent(Bool.self, forKey: .isPrivate) ?? false
         isIdle = try container.decodeIfPresent(Bool.self, forKey: .isIdle) ?? false
+        activityId = try container.decodeIfPresent(UUID.self, forKey: .activityId)
+        isBreak = try container.decodeIfPresent(Bool.self, forKey: .isBreak) ?? false
     }
 }
 
@@ -163,32 +173,41 @@ struct Project: Identifiable, Codable, Hashable {
     var name: String
     var colorHex: String
     var parentId: UUID?
+    var clientId: UUID?
     var productivityRating: ProductivityRating?
     var hourlyRate: Double?
     var isBillable: Bool
     var archived: Bool
     var createdAt: Date
-    
+    var timeBudgetSeconds: TimeInterval?
+    var moneyBudget: Double?
+
     init(
         id: UUID = UUID(),
         name: String,
         colorHex: String,
         parentId: UUID? = nil,
+        clientId: UUID? = nil,
         productivityRating: ProductivityRating? = nil,
         hourlyRate: Double? = nil,
         isBillable: Bool = false,
         archived: Bool = false,
-        createdAt: Date = Date()
+        createdAt: Date = Date(),
+        timeBudgetSeconds: TimeInterval? = nil,
+        moneyBudget: Double? = nil
     ) {
         self.id = id
         self.name = name
         self.colorHex = colorHex
         self.parentId = parentId
+        self.clientId = clientId
         self.productivityRating = productivityRating
         self.hourlyRate = hourlyRate
         self.isBillable = isBillable
         self.archived = archived
         self.createdAt = createdAt
+        self.timeBudgetSeconds = timeBudgetSeconds
+        self.moneyBudget = moneyBudget
     }
 }
 
@@ -239,6 +258,7 @@ struct Rule: Identifiable, Codable, Hashable {
     // Actions
     var targetProjectId: UUID?
     var targetCategoryId: UUID?
+    var targetActivityId: UUID?
     var targetTagIds: Set<UUID>
     var markAsPrivate: Bool
     
@@ -264,6 +284,201 @@ struct Goal: Identifiable, Codable, Hashable {
     var minutesPerDay: Int
 }
 
+// MARK: - Client Entity
+struct Client: Identifiable, Codable, Hashable {
+    let id: UUID
+    var name: String
+    var company: String?
+    var address: String?
+    var email: String?
+    var phone: String?
+    var vatId: String?
+    var currency: String
+    var defaultHourlyRate: Double?
+    var defaultInvoiceNotes: String?
+    var archived: Bool
+    var createdAt: Date
+
+    init(
+        id: UUID = UUID(),
+        name: String,
+        company: String? = nil,
+        address: String? = nil,
+        email: String? = nil,
+        phone: String? = nil,
+        vatId: String? = nil,
+        currency: String = "USD",
+        defaultHourlyRate: Double? = nil,
+        defaultInvoiceNotes: String? = nil,
+        archived: Bool = false,
+        createdAt: Date = Date()
+    ) {
+        self.id = id
+        self.name = name
+        self.company = company
+        self.address = address
+        self.email = email
+        self.phone = phone
+        self.vatId = vatId
+        self.currency = currency
+        self.defaultHourlyRate = defaultHourlyRate
+        self.defaultInvoiceNotes = defaultInvoiceNotes
+        self.archived = archived
+        self.createdAt = createdAt
+    }
+}
+
+// MARK: - Activity Entity (tasks within projects)
+struct Activity: Identifiable, Codable, Hashable {
+    let id: UUID
+    var name: String
+    var projectId: UUID?
+    var colorHex: String?
+    var isBillable: Bool
+    var hourlyRate: Double?
+    var archived: Bool
+    var createdAt: Date
+
+    init(
+        id: UUID = UUID(),
+        name: String,
+        projectId: UUID? = nil,
+        colorHex: String? = nil,
+        isBillable: Bool = true,
+        hourlyRate: Double? = nil,
+        archived: Bool = false,
+        createdAt: Date = Date()
+    ) {
+        self.id = id
+        self.name = name
+        self.projectId = projectId
+        self.colorHex = colorHex
+        self.isBillable = isBillable
+        self.hourlyRate = hourlyRate
+        self.archived = archived
+        self.createdAt = createdAt
+    }
+}
+
+// MARK: - Manual Timer
+struct ManualTimer: Identifiable, Codable, Hashable {
+    let id: UUID
+    var projectId: UUID?
+    var activityId: UUID?
+    var description: String?
+    var startedAt: Date
+    var stoppedAt: Date?
+    var tagIds: Set<UUID>
+    var isBillable: Bool
+
+    init(
+        id: UUID = UUID(),
+        projectId: UUID? = nil,
+        activityId: UUID? = nil,
+        description: String? = nil,
+        startedAt: Date = Date(),
+        stoppedAt: Date? = nil,
+        tagIds: Set<UUID> = [],
+        isBillable: Bool = true
+    ) {
+        self.id = id
+        self.projectId = projectId
+        self.activityId = activityId
+        self.description = description
+        self.startedAt = startedAt
+        self.stoppedAt = stoppedAt
+        self.tagIds = tagIds
+        self.isBillable = isBillable
+    }
+
+    var isRunning: Bool { stoppedAt == nil }
+
+    var elapsed: TimeInterval {
+        let end = stoppedAt ?? Date()
+        return end.timeIntervalSince(startedAt)
+    }
+}
+
+// MARK: - Invoice
+enum InvoiceStatus: String, Codable, CaseIterable {
+    case draft
+    case sent
+    case paid
+    case overdue
+}
+
+struct Invoice: Identifiable, Codable, Hashable {
+    let id: UUID
+    var invoiceNumber: String
+    var clientId: UUID?
+    var status: InvoiceStatus
+    var createdAt: Date
+    var dueDate: Date?
+    var paidAt: Date?
+    var totalAmount: Double
+    var taxAmount: Double
+    var currency: String
+    var notes: String?
+    var sessionIds: [UUID]
+    var pdfData: Data?
+
+    init(
+        id: UUID = UUID(),
+        invoiceNumber: String,
+        clientId: UUID? = nil,
+        status: InvoiceStatus = .draft,
+        createdAt: Date = Date(),
+        dueDate: Date? = nil,
+        paidAt: Date? = nil,
+        totalAmount: Double = 0,
+        taxAmount: Double = 0,
+        currency: String = "USD",
+        notes: String? = nil,
+        sessionIds: [UUID] = [],
+        pdfData: Data? = nil
+    ) {
+        self.id = id
+        self.invoiceNumber = invoiceNumber
+        self.clientId = clientId
+        self.status = status
+        self.createdAt = createdAt
+        self.dueDate = dueDate
+        self.paidAt = paidAt
+        self.totalAmount = totalAmount
+        self.taxAmount = taxAmount
+        self.currency = currency
+        self.notes = notes
+        self.sessionIds = sessionIds
+        self.pdfData = pdfData
+    }
+}
+
+// MARK: - Favorite (Quick Entry)
+struct Favorite: Identifiable, Codable, Hashable {
+    let id: UUID
+    var projectId: UUID?
+    var activityId: UUID?
+    var description: String?
+    var isBillable: Bool
+    var sortOrder: Int
+
+    init(
+        id: UUID = UUID(),
+        projectId: UUID? = nil,
+        activityId: UUID? = nil,
+        description: String? = nil,
+        isBillable: Bool = true,
+        sortOrder: Int = 0
+    ) {
+        self.id = id
+        self.projectId = projectId
+        self.activityId = activityId
+        self.description = description
+        self.isBillable = isBillable
+        self.sortOrder = sortOrder
+    }
+}
+
 struct UserPreferences: Codable, Hashable {
     var hasCompletedOnboarding: Bool
     var workDayStart: String
@@ -281,6 +496,56 @@ struct UserPreferences: Codable, Hashable {
     var lastImportTimestamp: Date?
     var lastImportHash: String?
 
+    // Kimai features
+    var currency: String
+    var invoiceNumberPrefix: String
+    var nextInvoiceNumber: Int
+    var defaultHourlyRate: Double?
+    var workingDays: [Int]
+    var expectedHoursPerDay: Double
+
+    init(
+        hasCompletedOnboarding: Bool = false,
+        workDayStart: String = "09:00",
+        workDayEnd: String = "17:00",
+        privateModeEnabled: Bool = false,
+        reviewReminderEnabled: Bool = false,
+        reviewReminderTime: String = "17:30",
+        weeklyRecapEnabled: Bool = true,
+        goalNudgesEnabled: Bool = false,
+        emailSummaryEnabled: Bool = false,
+        calendarIntegrationEnabled: Bool = true,
+        iCloudBackupEnabled: Bool = false,
+        lastImportTimestamp: Date? = nil,
+        lastImportHash: String? = nil,
+        currency: String = "USD",
+        invoiceNumberPrefix: String = "INV-",
+        nextInvoiceNumber: Int = 1,
+        defaultHourlyRate: Double? = nil,
+        workingDays: [Int] = [1, 2, 3, 4, 5],
+        expectedHoursPerDay: Double = 8.0
+    ) {
+        self.hasCompletedOnboarding = hasCompletedOnboarding
+        self.workDayStart = workDayStart
+        self.workDayEnd = workDayEnd
+        self.privateModeEnabled = privateModeEnabled
+        self.reviewReminderEnabled = reviewReminderEnabled
+        self.reviewReminderTime = reviewReminderTime
+        self.weeklyRecapEnabled = weeklyRecapEnabled
+        self.goalNudgesEnabled = goalNudgesEnabled
+        self.emailSummaryEnabled = emailSummaryEnabled
+        self.calendarIntegrationEnabled = calendarIntegrationEnabled
+        self.iCloudBackupEnabled = iCloudBackupEnabled
+        self.lastImportTimestamp = lastImportTimestamp
+        self.lastImportHash = lastImportHash
+        self.currency = currency
+        self.invoiceNumberPrefix = invoiceNumberPrefix
+        self.nextInvoiceNumber = nextInvoiceNumber
+        self.defaultHourlyRate = defaultHourlyRate
+        self.workingDays = workingDays
+        self.expectedHoursPerDay = expectedHoursPerDay
+    }
+
     static let `default` = UserPreferences(
         hasCompletedOnboarding: false,
         workDayStart: "09:00",
@@ -294,8 +559,37 @@ struct UserPreferences: Codable, Hashable {
         calendarIntegrationEnabled: true,
         iCloudBackupEnabled: false,
         lastImportTimestamp: nil,
-        lastImportHash: nil
+        lastImportHash: nil,
+        currency: "USD",
+        invoiceNumberPrefix: "INV-",
+        nextInvoiceNumber: 1,
+        defaultHourlyRate: nil,
+        workingDays: [1, 2, 3, 4, 5],
+        expectedHoursPerDay: 8.0
     )
+
+    init(from decoder: Decoder) throws {
+        let container = try decoder.container(keyedBy: CodingKeys.self)
+        hasCompletedOnboarding = try container.decodeIfPresent(Bool.self, forKey: .hasCompletedOnboarding) ?? false
+        workDayStart = try container.decodeIfPresent(String.self, forKey: .workDayStart) ?? "09:00"
+        workDayEnd = try container.decodeIfPresent(String.self, forKey: .workDayEnd) ?? "17:00"
+        privateModeEnabled = try container.decodeIfPresent(Bool.self, forKey: .privateModeEnabled) ?? false
+        reviewReminderEnabled = try container.decodeIfPresent(Bool.self, forKey: .reviewReminderEnabled) ?? false
+        reviewReminderTime = try container.decodeIfPresent(String.self, forKey: .reviewReminderTime) ?? "17:30"
+        weeklyRecapEnabled = try container.decodeIfPresent(Bool.self, forKey: .weeklyRecapEnabled) ?? true
+        goalNudgesEnabled = try container.decodeIfPresent(Bool.self, forKey: .goalNudgesEnabled) ?? false
+        emailSummaryEnabled = try container.decodeIfPresent(Bool.self, forKey: .emailSummaryEnabled) ?? false
+        calendarIntegrationEnabled = try container.decodeIfPresent(Bool.self, forKey: .calendarIntegrationEnabled) ?? true
+        iCloudBackupEnabled = try container.decodeIfPresent(Bool.self, forKey: .iCloudBackupEnabled) ?? false
+        lastImportTimestamp = try container.decodeIfPresent(Date.self, forKey: .lastImportTimestamp)
+        lastImportHash = try container.decodeIfPresent(String.self, forKey: .lastImportHash)
+        currency = try container.decodeIfPresent(String.self, forKey: .currency) ?? "USD"
+        invoiceNumberPrefix = try container.decodeIfPresent(String.self, forKey: .invoiceNumberPrefix) ?? "INV-"
+        nextInvoiceNumber = try container.decodeIfPresent(Int.self, forKey: .nextInvoiceNumber) ?? 1
+        defaultHourlyRate = try container.decodeIfPresent(Double.self, forKey: .defaultHourlyRate)
+        workingDays = try container.decodeIfPresent([Int].self, forKey: .workingDays) ?? [1, 2, 3, 4, 5]
+        expectedHoursPerDay = try container.decodeIfPresent(Double.self, forKey: .expectedHoursPerDay) ?? 8.0
+    }
 }
 
 struct LocalData: Codable {
@@ -306,7 +600,7 @@ struct LocalData: Codable {
     var focusSessions: [FocusSession]
     var goals: [Goal]
     var preferences: UserPreferences
-    
+
     // Phase 0: New Data Models
     var rawEvents: [RawEvent] = []
     var sessions: [Session] = []
@@ -314,6 +608,13 @@ struct LocalData: Codable {
     var tags: [Tag] = []
     var ruleMatches: [RuleMatch] = []
     var contextEvents: [ContextEvent] = []
+
+    // Kimai feature entities
+    var clients: [Client] = []
+    var activities: [Activity] = []
+    var manualTimers: [ManualTimer] = []
+    var invoices: [Invoice] = []
+    var favorites: [Favorite] = []
 
     // Transient migration payloads from old JSON versions.
     private(set) var migratedRawEvents: [RawEvent] = []
@@ -335,6 +636,11 @@ struct LocalData: Codable {
         case tags
         case ruleMatches
         case contextEvents
+        case clients
+        case activities
+        case manualTimers
+        case invoices
+        case favorites
     }
 
     init(
@@ -350,7 +656,12 @@ struct LocalData: Codable {
         projects: [Project] = [],
         tags: [Tag] = [],
         ruleMatches: [RuleMatch] = [],
-        contextEvents: [ContextEvent] = []
+        contextEvents: [ContextEvent] = [],
+        clients: [Client] = [],
+        activities: [Activity] = [],
+        manualTimers: [ManualTimer] = [],
+        invoices: [Invoice] = [],
+        favorites: [Favorite] = []
     ) {
         self.categories = categories
         self.rules = rules
@@ -365,6 +676,11 @@ struct LocalData: Codable {
         self.tags = tags
         self.ruleMatches = ruleMatches
         self.contextEvents = contextEvents
+        self.clients = clients
+        self.activities = activities
+        self.manualTimers = manualTimers
+        self.invoices = invoices
+        self.favorites = favorites
         self.migratedRawEvents = rawEvents
         self.migratedSessions = sessions
         self.migratedRuleMatches = ruleMatches
@@ -380,7 +696,7 @@ struct LocalData: Codable {
         focusSessions = try container.decodeIfPresent([FocusSession].self, forKey: .focusSessions) ?? []
         goals = try container.decodeIfPresent([Goal].self, forKey: .goals) ?? []
         preferences = try container.decodeIfPresent(UserPreferences.self, forKey: .preferences) ?? .default
-        
+
         // Event-heavy payloads are decoded for migration but not re-encoded to JSON.
         let decodedRaw = try container.decodeIfPresent([RawEvent].self, forKey: .rawEvents) ?? []
         let decodedSessions = try container.decodeIfPresent([Session].self, forKey: .sessions) ?? []
@@ -393,6 +709,12 @@ struct LocalData: Codable {
         tags = try container.decodeIfPresent([Tag].self, forKey: .tags) ?? []
         ruleMatches = []
         contextEvents = []
+
+        clients = try container.decodeIfPresent([Client].self, forKey: .clients) ?? []
+        activities = try container.decodeIfPresent([Activity].self, forKey: .activities) ?? []
+        manualTimers = try container.decodeIfPresent([ManualTimer].self, forKey: .manualTimers) ?? []
+        invoices = try container.decodeIfPresent([Invoice].self, forKey: .invoices) ?? []
+        favorites = try container.decodeIfPresent([Favorite].self, forKey: .favorites) ?? []
 
         migratedRawEvents = decodedRaw
         migratedSessions = decodedSessions
@@ -411,6 +733,11 @@ struct LocalData: Codable {
         try container.encode(preferences, forKey: .preferences)
         try container.encode(projects, forKey: .projects)
         try container.encode(tags, forKey: .tags)
+        try container.encode(clients, forKey: .clients)
+        try container.encode(activities, forKey: .activities)
+        try container.encode(manualTimers, forKey: .manualTimers)
+        try container.encode(invoices, forKey: .invoices)
+        try container.encode(favorites, forKey: .favorites)
     }
 }
 

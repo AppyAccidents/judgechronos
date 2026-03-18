@@ -24,6 +24,12 @@ final class LocalDataStore: ObservableObject {
     @Published private(set) var ruleMatches: [RuleMatch] = []
     @Published private(set) var contextEvents: [ContextEvent] = []
 
+    @Published private(set) var clients: [Client] = []
+    @Published private(set) var activities: [Activity] = []
+    @Published private(set) var manualTimers: [ManualTimer] = []
+    @Published private(set) var invoices: [Invoice] = []
+    @Published private(set) var favorites: [Favorite] = []
+
     @Published var preferences: UserPreferences = .default
     let channel: DistributionChannel
 
@@ -45,6 +51,9 @@ final class LocalDataStore: ObservableObject {
     private var categoryById: [UUID: Category] = [:]
     private var categoryNameIndex: [String: UUID] = [:]
     private var sessionsByDate: [Date: [Session]] = [:]
+    private var clientById: [UUID: Client] = [:]
+    private var activityById: [UUID: Activity] = [:]
+    private var invoiceById: [UUID: Invoice] = [:]
 
     init(
         fileURL: URL? = nil,
@@ -95,6 +104,11 @@ final class LocalDataStore: ObservableObject {
         projects = decoded?.projects ?? []
         tags = decoded?.tags ?? []
         preferences = decoded?.preferences ?? .default
+        clients = decoded?.clients ?? []
+        activities = decoded?.activities ?? []
+        manualTimers = decoded?.manualTimers ?? []
+        invoices = decoded?.invoices ?? []
+        favorites = decoded?.favorites ?? []
 
         if let sqliteState = try? sqliteStore.loadState() {
             rawEvents = sqliteState.rawEvents
@@ -152,6 +166,11 @@ final class LocalDataStore: ObservableObject {
         
         // Sessions by date (start of day)
         rebuildSessionsByDate()
+
+        // New entity indices
+        clientById = Dictionary(uniqueKeysWithValues: clients.map { ($0.id, $0) })
+        activityById = Dictionary(uniqueKeysWithValues: activities.map { ($0.id, $0) })
+        invoiceById = Dictionary(uniqueKeysWithValues: invoices.map { ($0.id, $0) })
     }
     
     private func rebuildSessionsByDate() {
@@ -574,6 +593,7 @@ final class LocalDataStore: ObservableObject {
         }
         let newCategory = Category(id: UUID(), name: trimmed, colorHex: color.toHex())
         categories.append(newCategory)
+        indexAdd(category: newCategory)
         persist(.immediate)
         return newCategory.id
     }
@@ -743,6 +763,20 @@ final class LocalDataStore: ObservableObject {
         return addedEvents.count
     }
 
+    func updateSessionActivity(sessionId: UUID, activityId: UUID?) {
+        guard let index = sessions.firstIndex(where: { $0.id == sessionId }) else { return }
+        sessions[index].activityId = activityId
+        indexUpdate(session: sessions[index])
+        persist(.immediate)
+    }
+
+    func updateSessionBreak(sessionId: UUID, isBreak: Bool) {
+        guard let index = sessions.firstIndex(where: { $0.id == sessionId }) else { return }
+        sessions[index].isBreak = isBreak
+        indexUpdate(session: sessions[index])
+        persist(.immediate)
+    }
+
     func updateSessionCategory(sessionId: UUID, categoryId: UUID?) {
         guard let index = sessions.firstIndex(where: { $0.id == sessionId }) else { return }
         sessions[index].categoryId = categoryId
@@ -872,6 +906,163 @@ final class LocalDataStore: ObservableObject {
         }
     }
 
+    // MARK: - Client Management
+
+    func addClient(_ client: Client) {
+        clients.append(client)
+        clientById[client.id] = client
+        persist(.immediate)
+    }
+
+    func updateClient(_ client: Client) {
+        guard let index = clients.firstIndex(where: { $0.id == client.id }) else { return }
+        clients[index] = client
+        clientById[client.id] = client
+        persist(.immediate)
+    }
+
+    func deleteClient(_ client: Client) {
+        clients.removeAll { $0.id == client.id }
+        clientById.removeValue(forKey: client.id)
+        for index in projects.indices where projects[index].clientId == client.id {
+            projects[index].clientId = nil
+            indexUpdate(project: projects[index])
+        }
+        persist(.immediate)
+    }
+
+    func clientName(for clientId: UUID?) -> String {
+        guard let clientId else { return "No Client" }
+        return clientById[clientId]?.name ?? "No Client"
+    }
+
+    // MARK: - Activity Management
+
+    func addActivity(_ activity: Activity) {
+        activities.append(activity)
+        activityById[activity.id] = activity
+        persist(.immediate)
+    }
+
+    func updateActivity(_ activity: Activity) {
+        guard let index = activities.firstIndex(where: { $0.id == activity.id }) else { return }
+        activities[index] = activity
+        activityById[activity.id] = activity
+        persist(.immediate)
+    }
+
+    func deleteActivity(_ activity: Activity) {
+        activities.removeAll { $0.id == activity.id }
+        activityById.removeValue(forKey: activity.id)
+        for index in sessions.indices where sessions[index].activityId == activity.id {
+            sessions[index].activityId = nil
+            indexUpdate(session: sessions[index])
+        }
+        persist(.immediate)
+    }
+
+    func activitiesForProject(_ projectId: UUID?) -> [Activity] {
+        activities.filter { $0.projectId == projectId || $0.projectId == nil }
+    }
+
+    func activityName(for activityId: UUID?) -> String {
+        guard let activityId else { return "No Activity" }
+        return activityById[activityId]?.name ?? "No Activity"
+    }
+
+    // MARK: - Manual Timer Management
+
+    func addManualTimer(_ timer: ManualTimer) {
+        manualTimers.append(timer)
+        persist(.immediate)
+    }
+
+    func updateManualTimer(_ timer: ManualTimer) {
+        guard let index = manualTimers.firstIndex(where: { $0.id == timer.id }) else { return }
+        manualTimers[index] = timer
+        persist(.immediate)
+    }
+
+    func stopManualTimer(id: UUID) {
+        guard let index = manualTimers.firstIndex(where: { $0.id == id }) else { return }
+        manualTimers[index].stoppedAt = Date()
+        let timer = manualTimers[index]
+        let session = Session(
+            id: UUID(),
+            startTime: timer.startedAt,
+            endTime: timer.stoppedAt ?? Date(),
+            sourceApp: timer.description ?? "Manual Timer",
+            rawEventIds: [],
+            projectId: timer.projectId,
+            categoryId: nil,
+            tagIds: timer.tagIds,
+            isIdle: false,
+            activityId: timer.activityId
+        )
+        addSession(session)
+        persist(.immediate)
+    }
+
+    func deleteManualTimer(_ timer: ManualTimer) {
+        manualTimers.removeAll { $0.id == timer.id }
+        persist(.immediate)
+    }
+
+    var activeTimers: [ManualTimer] {
+        manualTimers.filter { $0.isRunning }
+    }
+
+    // MARK: - Invoice Management
+
+    func addInvoice(_ invoice: Invoice) {
+        invoices.append(invoice)
+        invoiceById[invoice.id] = invoice
+        persist(.immediate)
+    }
+
+    func updateInvoice(_ invoice: Invoice) {
+        guard let index = invoices.firstIndex(where: { $0.id == invoice.id }) else { return }
+        invoices[index] = invoice
+        invoiceById[invoice.id] = invoice
+        persist(.immediate)
+    }
+
+    func deleteInvoice(_ invoice: Invoice) {
+        invoices.removeAll { $0.id == invoice.id }
+        invoiceById.removeValue(forKey: invoice.id)
+        persist(.immediate)
+    }
+
+    func nextInvoiceNumber() -> String {
+        let number = preferences.nextInvoiceNumber
+        let formatted = "\(preferences.invoiceNumberPrefix)\(String(format: "%04d", number))"
+        updatePreferences { $0.nextInvoiceNumber += 1 }
+        return formatted
+    }
+
+    // MARK: - Favorites Management
+
+    func addFavorite(_ favorite: Favorite) {
+        favorites.append(favorite)
+        persist(.immediate)
+    }
+
+    func updateFavorite(_ favorite: Favorite) {
+        guard let index = favorites.firstIndex(where: { $0.id == favorite.id }) else { return }
+        favorites[index] = favorite
+        persist(.immediate)
+    }
+
+    func deleteFavorite(_ favorite: Favorite) {
+        favorites.removeAll { $0.id == favorite.id }
+        persist(.immediate)
+    }
+
+    func reorderFavorites(_ newOrder: [Favorite]) {
+        favorites = newOrder
+        persist(.immediate)
+    }
+
     private func configurationSnapshot() -> LocalData {
         LocalData(
             categories: categories,
@@ -886,7 +1077,12 @@ final class LocalDataStore: ObservableObject {
             projects: projects,
             tags: tags,
             ruleMatches: ruleMatches,
-            contextEvents: contextEvents
+            contextEvents: contextEvents,
+            clients: clients,
+            activities: activities,
+            manualTimers: manualTimers,
+            invoices: invoices,
+            favorites: favorites
         )
     }
 

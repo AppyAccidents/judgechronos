@@ -59,7 +59,7 @@ struct EventDetailView: View {
                     .font(.caption)
                     .fontWeight(.bold)
                     .foregroundColor(.secondary)
-                
+
                 Picker("", selection: bindingForCategory) {
                     Text("Uncategorized").tag(UUID?.none)
                     ForEach(dataStore.categories) { category in
@@ -68,7 +68,27 @@ struct EventDetailView: View {
                 }
                 .labelsHidden()
             }
-            
+
+            // Activity Picker
+            VStack(alignment: .leading, spacing: 4) {
+                Text("ACTIVITY")
+                    .font(.caption)
+                    .fontWeight(.bold)
+                    .foregroundColor(.secondary)
+
+                Picker("", selection: bindingForActivity) {
+                    Text("No Activity").tag(UUID?.none)
+                    ForEach(dataStore.activities) { activity in
+                        Text(activity.name).tag(Optional(activity.id))
+                    }
+                }
+                .labelsHidden()
+            }
+
+            // Break Toggle
+            Toggle("Mark as Break", isOn: bindingForBreak)
+                .font(.caption)
+
             // Timestamp
             Text("\(Formatting.formatTime(event.startTime)) - \(Formatting.formatTime(event.endTime))")
                 .font(.caption2)
@@ -84,6 +104,33 @@ struct EventDetailView: View {
             get: { dataStore.assignmentForEvent(event) },
             set: { newValue in
                 viewModel.updateCategory(for: event, categoryId: newValue)
+            }
+        )
+    }
+
+    private var bindingForActivity: Binding<UUID?> {
+        Binding(
+            get: {
+                guard let index = dataStore.sessions.firstIndex(where: { $0.id == event.id }) else { return nil }
+                return dataStore.sessions[index].activityId
+            },
+            set: { newValue in
+                guard let index = dataStore.sessions.firstIndex(where: { $0.id == event.id }) else { return }
+                var session = dataStore.sessions[index]
+                session.activityId = newValue
+                dataStore.updateSessionActivity(sessionId: event.id, activityId: newValue)
+            }
+        )
+    }
+
+    private var bindingForBreak: Binding<Bool> {
+        Binding(
+            get: {
+                guard let index = dataStore.sessions.firstIndex(where: { $0.id == event.id }) else { return false }
+                return dataStore.sessions[index].isBreak
+            },
+            set: { newValue in
+                dataStore.updateSessionBreak(sessionId: event.id, isBreak: newValue)
             }
         )
     }

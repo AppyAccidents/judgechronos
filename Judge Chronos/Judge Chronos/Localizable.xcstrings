@@ -1,105 +1,1226 @@
 {
-  "sourceLanguage": "en",
-  "strings": {
-    "app.name": {
-      "comment": "Application name",
-      "localizations": {
-        "en": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "Judge Chronos"
+  "sourceLanguage" : "en",
+  "strings" : {
+    "" : {
+
+    },
+    "(Archived)" : {
+
+    },
+    "%" : {
+
+    },
+    "%@" : {
+
+    },
+    "%@ - %@" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "new",
+            "value" : "%1$@ - %2$@"
           }
         }
       }
     },
-    "sidebar.timeline": {
-      "comment": "Sidebar item - Timeline",
-      "localizations": {
-        "en": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "Timeline"
+    "%@ • %@" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "new",
+            "value" : "%1$@ • %2$@"
           }
         }
       }
     },
-    "sidebar.projects": {
-      "comment": "Sidebar item - Projects",
-      "localizations": {
-        "en": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "Projects"
+    "%@ selected" : {
+
+    },
+    "%@: %lld%%" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "new",
+            "value" : "%1$@: %2$lld%%"
           }
         }
       }
     },
-    "sidebar.rules": {
-      "comment": "Sidebar item - Rules",
-      "localizations": {
-        "en": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "Rules"
+    "%@%@" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "new",
+            "value" : "%1$@%2$@"
           }
         }
       }
     },
-    "sidebar.reports": {
-      "comment": "Sidebar item - Reports",
-      "localizations": {
-        "en": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "Reports"
+    "%lld" : {
+
+    },
+    "%lld / %lld min" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "new",
+            "value" : "%1$lld / %2$lld min"
           }
         }
       }
     },
-    "sidebar.settings": {
-      "comment": "Sidebar item - Settings",
-      "localizations": {
-        "en": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "Settings"
+    "%lld clients" : {
+
+    },
+    "%lld min" : {
+
+    },
+    "%lld min/day" : {
+
+    },
+    "%lld minutes" : {
+
+    },
+    "%lld today" : {
+
+    },
+    "%lld:00" : {
+
+    },
+    "$" : {
+
+    },
+    "0" : {
+
+    },
+    "0.00" : {
+
+    },
+    "1. Work hours" : {
+
+    },
+    "2. Privacy" : {
+
+    },
+    "3. Starter categories" : {
+
+    },
+    "25m" : {
+
+    },
+    "45m" : {
+
+    },
+    "60m" : {
+
+    },
+    "A mindful journaling & self-reflection app." : {
+
+    },
+    "About Judge Chronos" : {
+
+    },
+    "Accessibility" : {
+
+    },
+    "Active Now" : {
+
+    },
+    "Active session: %@" : {
+
+    },
+    "Activities" : {
+
+    },
+    "Activity" : {
+
+    },
+    "ACTIVITY" : {
+
+    },
+    "Activity Heatmap" : {
+
+    },
+    "Activity Name" : {
+
+    },
+    "Add" : {
+
+    },
+    "Add Activity" : {
+
+    },
+    "Add Category" : {
+
+    },
+    "Add Child Project" : {
+
+    },
+    "Add Client" : {
+
+    },
+    "Add Favorite" : {
+
+    },
+    "Add Goal" : {
+
+    },
+    "Add Project" : {
+
+    },
+    "Add Rule" : {
+
+    },
+    "Address" : {
+
+    },
+    "AI Suggest" : {
+
+    },
+    "AI Suggestions" : {
+
+    },
+    "AI: %@" : {
+
+    },
+    "All" : {
+
+    },
+    "All caught up for this day." : {
+
+    },
+    "All Projects" : {
+
+    },
+    "App name contains" : {
+
+    },
+    "app.name" : {
+      "comment" : "Application name",
+      "extractionState" : "stale",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Judge Chronos"
           }
         }
       }
     },
-    "common.save": {
-      "comment": "Common button - Save",
-      "localizations": {
-        "en": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "Save"
+    "Apple Intelligence" : {
+
+    },
+    "Apple Intelligence available" : {
+
+    },
+    "Apple Intelligence unavailable" : {
+
+    },
+    "Apple Intelligence unavailable: %@" : {
+
+    },
+    "Applied via '%@' because it matched %@" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "new",
+            "value" : "Applied via '%1$@' because it matched %2$@"
           }
         }
       }
     },
-    "common.cancel": {
-      "comment": "Common button - Cancel",
-      "localizations": {
-        "en": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "Cancel"
+    "Apply" : {
+
+    },
+    "Archived" : {
+
+    },
+    "Auto" : {
+
+    },
+    "Auto-Group Context Switches" : {
+
+    },
+    "Auto: %@" : {
+
+    },
+    "Automation Rules" : {
+
+    },
+    "Back" : {
+
+    },
+    "Back up data to iCloud (coming soon)" : {
+
+    },
+    "Billable" : {
+
+    },
+    "Billable projects only" : {
+
+    },
+    "Billable time" : {
+
+    },
+    "Browser" : {
+
+    },
+    "Browser Tracking" : {
+
+    },
+    "Budget" : {
+
+    },
+    "Budget Summary" : {
+
+    },
+    "Calendar" : {
+
+    },
+    "Calendar meeting correlation is active" : {
+
+    },
+    "Calendar meeting correlation is not granted" : {
+
+    },
+    "Call Ended" : {
+
+    },
+    "Cancel" : {
+
+    },
+    "Categories" : {
+
+    },
+    "Category" : {
+
+    },
+    "CATEGORY" : {
+
+    },
+    "Category name" : {
+
+    },
+    "Change vs last week: %lld min" : {
+
+    },
+    "Check Again" : {
+
+    },
+    "Chrome" : {
+
+    },
+    "Chrome Web Store version coming soon for easier installation" : {
+
+    },
+    "Clear" : {
+
+    },
+    "Client" : {
+
+    },
+    "Client Name" : {
+
+    },
+    "Close" : {
+
+    },
+    "Color" : {
+
+    },
+    "common.cancel" : {
+      "comment" : "Common button - Cancel",
+      "extractionState" : "stale",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Cancel"
           }
         }
       }
     },
-    "common.delete": {
-      "comment": "Common button - Delete",
-      "localizations": {
-        "en": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "Delete"
+    "common.delete" : {
+      "comment" : "Common button - Delete",
+      "extractionState" : "stale",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Delete"
           }
         }
       }
+    },
+    "common.save" : {
+      "comment" : "Common button - Save",
+      "extractionState" : "stale",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Save"
+          }
+        }
+      }
+    },
+    "Company" : {
+
+    },
+    "Confidence %lld%%" : {
+
+    },
+    "Contact" : {
+
+    },
+    "Contains: %@" : {
+
+    },
+    "Control what is tracked and when." : {
+
+    },
+    "Create Invoice" : {
+
+    },
+    "Create quick-entry bookmarks for common tasks" : {
+
+    },
+    "Create your first invoice from tracked sessions" : {
+
+    },
+    "Create your first project to organize your time" : {
+
+    },
+    "Currency" : {
+
+    },
+    "Currency & Rates" : {
+
+    },
+    "Current exclusions: %@" : {
+
+    },
+    "Daily Review" : {
+
+    },
+    "Daily Summary" : {
+
+    },
+    "Data & Backup" : {
+
+    },
+    "Data Portability" : {
+
+    },
+    "Date" : {
+
+    },
+    "Date range" : {
+
+    },
+    "Date Range" : {
+
+    },
+    "days" : {
+
+    },
+    "Default Hourly Rate" : {
+
+    },
+    "Default Invoice Notes" : {
+
+    },
+    "Delete" : {
+
+    },
+    "Description" : {
+
+    },
+    "Designed by Antigravity" : {
+
+    },
+    "Dismiss" : {
+
+    },
+    "Done" : {
+
+    },
+    "Due Date" : {
+
+    },
+    "Duration" : {
+
+    },
+    "Duration (Minutes)" : {
+
+    },
+    "Duration: %@" : {
+
+    },
+    "Edit" : {
+
+    },
+    "Edit Activity" : {
+
+    },
+    "Edit Client" : {
+
+    },
+    "Edit Favorite" : {
+
+    },
+    "Edit Project" : {
+
+    },
+    "Email" : {
+
+    },
+    "Email summary (coming soon)" : {
+
+    },
+    "Enable daily review reminder" : {
+
+    },
+    "Enable goal nudges" : {
+
+    },
+    "Enable Private Mode (pause tracking)" : {
+
+    },
+    "Enable weekly story recap" : {
+
+    },
+    "Enable Window Title Tracking" : {
+
+    },
+    "Enabled" : {
+
+    },
+    "End" : {
+
+    },
+    "End Date" : {
+
+    },
+    "End Session Now" : {
+
+    },
+    "Ends at %@" : {
+
+    },
+    "Exclude apps containing…" : {
+
+    },
+    "Existing Rules" : {
+
+    },
+    "Expected Hours Per Day" : {
+
+    },
+    "Export" : {
+
+    },
+    "Export all your activity, rules, and categories as a lossless JSON file." : {
+
+    },
+    "Export as CSV" : {
+
+    },
+    "Export as HTML" : {
+
+    },
+    "Export as PDF" : {
+
+    },
+    "Export CSV" : {
+
+    },
+    "Export JSON" : {
+
+    },
+    "Export Lossless Data (JSON)" : {
+
+    },
+    "Export Report" : {
+
+    },
+    "Favorites" : {
+
+    },
+    "Finish" : {
+
+    },
+    "Focus Mode" : {
+
+    },
+    "Focus Session" : {
+
+    },
+    "Focus: %@ until %@" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "new",
+            "value" : "Focus: %1$@ until %2$@"
+          }
+        }
+      }
+    },
+    "Full Disk Access" : {
+
+    },
+    "Generate a quick summary of this week’s activity." : {
+
+    },
+    "Generate Weekly Recap" : {
+
+    },
+    "Get Daily Summary" : {
+
+    },
+    "Goals" : {
+
+    },
+    "Grant Access" : {
+
+    },
+    "Grant Full Disk Access" : {
+
+    },
+    "Grant Permission" : {
+
+    },
+    "Granted" : {
+
+    },
+    "Group By" : {
+
+    },
+    "Grouping" : {
+
+    },
+    "High" : {
+
+    },
+    "Hourly Rate" : {
+
+    },
+    "Hourly Rate Override" : {
+
+    },
+    "Hours" : {
+
+    },
+    "Idle" : {
+
+    },
+    "If the toggle is disabled, unlock System Settings and move the app to /Applications." : {
+
+    },
+    "If you just granted Full Disk Access, press Refresh. Otherwise, your Mac may not have recorded app usage yet." : {
+
+    },
+    "Include subprojects" : {
+
+    },
+    "Insights" : {
+
+    },
+    "Install Browser Extension" : {
+
+    },
+    "Integrations" : {
+
+    },
+    "INV-" : {
+
+    },
+    "Invoice Details" : {
+
+    },
+    "Invoice Number Prefix" : {
+
+    },
+    "Invoices" : {
+
+    },
+    "Invoices (%lld)" : {
+
+    },
+    "Invoicing" : {
+
+    },
+    "Judge Chronos" : {
+
+    },
+    "Judge Chronos needs Accessibility permissions to track window titles." : {
+
+    },
+    "Judge Chronos needs Full Disk Access to read your activity data." : {
+
+    },
+    "Judge Chronos reads your activity data from the system database." : {
+
+    },
+    "Keep using your apps and press Refresh to capture timeline activity." : {
+
+    },
+    "Last refresh: %@" : {
+
+    },
+    "Let’s set up your day so tracking feels effortless." : {
+
+    },
+    "Link Calendar" : {
+
+    },
+    "Load Donation Options" : {
+
+    },
+    "Loading activity..." : {
+
+    },
+    "Loading..." : {
+
+    },
+    "Log this time to:" : {
+
+    },
+    "Log Time" : {
+
+    },
+    "Low" : {
+
+    },
+    "Mark as Break" : {
+
+    },
+    "Mark as Overdue" : {
+
+    },
+    "Mark as Paid" : {
+
+    },
+    "Mark as Private" : {
+
+    },
+    "Mark as Sent" : {
+
+    },
+    "Matched: %@" : {
+
+    },
+    "Meeting context" : {
+
+    },
+    "Minutes" : {
+
+    },
+    "Minutes per day" : {
+
+    },
+    "Money Budget" : {
+
+    },
+    "Name" : {
+
+    },
+    "New Activity" : {
+
+    },
+    "New Client" : {
+
+    },
+    "New Favorite" : {
+
+    },
+    "New Invoice" : {
+
+    },
+    "New Project" : {
+
+    },
+    "Next" : {
+
+    },
+    "Next Invoice Number" : {
+
+    },
+    "No active browser sessions" : {
+
+    },
+    "No activities yet" : {
+
+    },
+    "No Activity" : {
+
+    },
+    "No activity found for this day." : {
+
+    },
+    "No activity recorded for this day" : {
+
+    },
+    "No activity yet." : {
+
+    },
+    "No categories yet." : {
+
+    },
+    "No Client" : {
+
+    },
+    "No exclusions yet." : {
+
+    },
+    "No Favorites Yet" : {
+
+    },
+    "No goals yet." : {
+
+    },
+    "No goals yet. Add one in Settings." : {
+
+    },
+    "No insights for today yet. Keep tracking to see personalized recommendations." : {
+
+    },
+    "No Invoices" : {
+
+    },
+    "No projects created yet" : {
+
+    },
+    "No projects linked to this client" : {
+
+    },
+    "No Projects Yet" : {
+
+    },
+    "No rules yet." : {
+
+    },
+    "No specific window title tracked." : {
+
+    },
+    "No suggestions yet." : {
+
+    },
+    "None" : {
+
+    },
+    "None (Top Level)" : {
+
+    },
+    "Not directly readable by apps. If activity import fails, enable it for Judge Chronos and relaunch." : {
+
+    },
+    "Not granted" : {
+
+    },
+    "Not required in this distribution." : {
+
+    },
+    "Not Set" : {
+
+    },
+    "Note (optional)" : {
+
+    },
+    "Notes" : {
+
+    },
+    "Open Judge Chronos" : {
+
+    },
+    "Open System Settings" : {
+
+    },
+    "Optional donations. No feature unlock." : {
+
+    },
+    "P%lld" : {
+
+    },
+    "Parent Project" : {
+
+    },
+    "Peak Hours" : {
+
+    },
+    "Period" : {
+
+    },
+    "Permissions Diagnostics" : {
+
+    },
+    "Phone" : {
+
+    },
+    "Pick a few categories to get going." : {
+
+    },
+    "Preview" : {
+
+    },
+    "Priority: %lld" : {
+
+    },
+    "Privacy" : {
+
+    },
+    "Privacy-safe automatic tracking: frontmost app, window title, and meetings." : {
+
+    },
+    "Private mode (pause tracking)" : {
+
+    },
+    "Private mode is on. Activity tracking and reports are paused." : {
+
+    },
+    "Productivity" : {
+
+    },
+    "Productivity Trend" : {
+
+    },
+    "Project" : {
+
+    },
+    "Project Name" : {
+
+    },
+    "Projects" : {
+
+    },
+    "Projects (%lld)" : {
+
+    },
+    "Quick Start" : {
+
+    },
+    "Range" : {
+
+    },
+    "Recent History" : {
+
+    },
+    "Refresh" : {
+
+    },
+    "Refresh AI Status" : {
+
+    },
+    "Refresh Calendar" : {
+
+    },
+    "Reminder time" : {
+
+    },
+    "Remove" : {
+
+    },
+    "Report Builder" : {
+
+    },
+    "Reports" : {
+
+    },
+    "Requires macOS 15+ and a compatible Mac." : {
+
+    },
+    "Returns a summary of today's activity from Judge Chronos." : {
+
+    },
+    "Reveal App in Finder" : {
+
+    },
+    "Reveal Local Data Folder" : {
+
+    },
+    "Rule Name (e.g., Coding Time)" : {
+
+    },
+    "Safari" : {
+
+    },
+    "Save" : {
+
+    },
+    "Score" : {
+
+    },
+    "Score: %@" : {
+
+    },
+    "Search app, category, keyword" : {
+
+    },
+    "Search clients..." : {
+
+    },
+    "Search projects..." : {
+
+    },
+    "Select a client" : {
+
+    },
+    "Select a project..." : {
+
+    },
+    "Select category" : {
+
+    },
+    "Select category..." : {
+
+    },
+    "Select..." : {
+
+    },
+    "Sessions" : {
+
+    },
+    "Set Up Browser Extension" : {
+
+    },
+    "Set Up Extensions" : {
+
+    },
+    "Set your typical working hours." : {
+
+    },
+    "Settings" : {
+
+    },
+    "Show Archived" : {
+
+    },
+    "Show only uncategorized" : {
+
+    },
+    "sidebar.projects" : {
+      "comment" : "Sidebar item - Projects",
+      "extractionState" : "stale",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Projects"
+          }
+        }
+      }
+    },
+    "sidebar.reports" : {
+      "comment" : "Sidebar item - Reports",
+      "extractionState" : "stale",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Reports"
+          }
+        }
+      }
+    },
+    "sidebar.rules" : {
+      "comment" : "Sidebar item - Rules",
+      "extractionState" : "stale",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Rules"
+          }
+        }
+      }
+    },
+    "sidebar.settings" : {
+      "comment" : "Sidebar item - Settings",
+      "extractionState" : "stale",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Settings"
+          }
+        }
+      }
+    },
+    "sidebar.timeline" : {
+      "comment" : "Sidebar item - Timeline",
+      "extractionState" : "stale",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Timeline"
+          }
+        }
+      }
+    },
+    "Single day" : {
+
+    },
+    "Skip" : {
+
+    },
+    "Sort Order: %lld" : {
+
+    },
+    "Start" : {
+
+    },
+    "Start Date" : {
+
+    },
+    "Start Focus" : {
+
+    },
+    "Start Focus Session" : {
+
+    },
+    "Start Timer" : {
+
+    },
+    "Start: %@" : {
+
+    },
+    "Starts a focus session in Judge Chronos." : {
+
+    },
+    "Status" : {
+
+    },
+    "Stop" : {
+
+    },
+    "Suggest" : {
+
+    },
+    "Suggest Categories" : {
+
+    },
+    "Suggest Categories from Recent Activity" : {
+
+    },
+    "Suggested: %@" : {
+
+    },
+    "Summary" : {
+
+    },
+    "Support Judge Chronos" : {
+
+    },
+    "Task" : {
+
+    },
+    "Tax Rate" : {
+
+    },
+    "Template" : {
+
+    },
+    "The Safari extension is bundled with the Judge Chronos app" : {
+
+    },
+    "Thinking..." : {
+
+    },
+    "This allows us to distinguish between 'Chrome - Facebook' and 'Chrome - Work Docs'." : {
+
+    },
+    "Time Budget (hours)" : {
+
+    },
+    "Timeline" : {
+
+    },
+    "Today" : {
+
+    },
+    "Top Apps" : {
+
+    },
+    "Total (%@)" : {
+
+    },
+    "Total Earned" : {
+
+    },
+    "Total Time" : {
+
+    },
+    "Track time spent on websites by installing the browser extension for Chrome or Safari." : {
+
+    },
+    "Uncategorized" : {
+
+    },
+    "Use project rate" : {
+
+    },
+    "VAT ID" : {
+
+    },
+    "VAT: %@" : {
+
+    },
+    "Version 1.0.0 (Alpha)" : {
+
+    },
+    "View" : {
+
+    },
+    "Week of %@ – %@" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "new",
+            "value" : "Week of %1$@ – %2$@"
+          }
+        }
+      }
+    },
+    "Weekly Recap" : {
+
+    },
+    "Weekly recap is disabled in Settings." : {
+
+    },
+    "Welcome to Judge Chronos" : {
+
+    },
+    "What was this call about?" : {
+
+    },
+    "WINDOW TITLE" : {
+
+    },
+    "Window: %@" : {
+
+    },
+    "Work Day" : {
+
+    },
+    "Work Schedule" : {
+
+    },
+    "Working Days" : {
+
+    },
+    "Working Time" : {
+
+    },
+    "Your Company Name" : {
+
+    },
+    "Your report is ready to download" : {
+
+    },
+    "Zoom" : {
+
     }
   },
-  "version": "1.0"
+  "version" : "1.0"
 }

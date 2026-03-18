@@ -5,30 +5,45 @@ import SwiftUI
 import UniformTypeIdentifiers
 
 enum SidebarItem: String, CaseIterable, Identifiable {
+    case dashboard
     case timeline
     case projects
+    case clients
+    case calendar
+    case favorites
     case rules
     case reports
+    case invoices
     case settings
 
-    var id: String { rawValue }
+    var id: SidebarItem { self }
 
     var label: String {
         switch self {
+        case .dashboard: return "Dashboard"
         case .timeline: return "Timeline"
         case .projects: return "Projects"
+        case .clients: return "Clients"
+        case .calendar: return "Calendar"
+        case .favorites: return "Favorites"
         case .rules: return "Rules"
         case .reports: return "Reports"
+        case .invoices: return "Invoices"
         case .settings: return "Settings"
         }
     }
 
     var systemImage: String {
         switch self {
+        case .dashboard: return "square.grid.2x2"
         case .timeline: return "clock"
         case .projects: return "folder"
+        case .clients: return "person.2"
+        case .calendar: return "calendar"
+        case .favorites: return "star"
         case .rules: return "line.3.horizontal.decrease.circle"
         case .reports: return "chart.bar"
+        case .invoices: return "doc.text"
         case .settings: return "gearshape"
         }
     }
@@ -54,35 +69,63 @@ struct ContentView: View {
 
     var body: some View {
         NavigationSplitView {
-            List(SidebarItem.allCases, selection: $selection) { item in
-                Label(item.label, systemImage: item.systemImage)
-                    .tag(item as SidebarItem?)
+            VStack(spacing: 0) {
+                ForEach(SidebarItem.allCases) { item in
+                    Button(action: { selection = item }) {
+                        Label(item.label, systemImage: item.systemImage)
+                            .frame(maxWidth: .infinity, alignment: .leading)
+                            .padding(.vertical, 6)
+                            .padding(.horizontal, 12)
+                            .background(selection == item ? Color.accentColor.opacity(0.2) : Color.clear)
+                            .cornerRadius(6)
+                    }
+                    .buttonStyle(.plain)
+                }
+                Spacer()
             }
+            .padding(8)
             .navigationTitle("Judge Chronos")
         } detail: {
-            switch selection ?? .timeline {
-            case .timeline:
-                TimelineView()
-            case .projects:
-                ProjectHierarchyView()
-            case .rules:
-                RulesView()
-            case .reports:
-                ReportsView()
-            case .settings:
-                SettingsView()
-            }
+            detailView(for: selection ?? .dashboard)
         }
         .frame(minWidth: 980, minHeight: 640)
         .background(AppTheme.Colors.background.ignoresSafeArea())
+        .animation(.default, value: selection)
         .sheet(isPresented: $showingOnboardingFlow) {
             OnboardingFlowView(isPresented: $showingOnboardingFlow)
                 .environmentObject(dataStore)
         }
         .onAppear {
+            selection = .timeline
             if !dataStore.preferences.hasCompletedOnboarding {
                 showingOnboardingFlow = true
             }
+        }
+    }
+
+    @ViewBuilder
+    private func detailView(for item: SidebarItem) -> some View {
+        switch item {
+        case .dashboard:
+            ProductivityDashboard()
+        case .timeline:
+            TimelineView()
+        case .projects:
+            ProjectHierarchyView()
+        case .clients:
+            ClientManagementView()
+        case .calendar:
+            CalendarView()
+        case .favorites:
+            FavoritesView()
+        case .rules:
+            RulesView()
+        case .reports:
+            ReportsView()
+        case .invoices:
+            InvoiceManagementView()
+        case .settings:
+            SettingsView()
         }
     }
 }
@@ -1583,6 +1626,94 @@ struct SettingsView: View {
                         dataStore.updatePreferences { $0.weeklyRecapEnabled = newValue }
                     }
                 ))
+            }
+
+            Section("Currency & Rates") {
+                Picker("Currency", selection: Binding(
+                    get: { dataStore.preferences.currency },
+                    set: { newValue in
+                        dataStore.updatePreferences { $0.currency = newValue }
+                    }
+                )) {
+                    ForEach(["USD", "EUR", "GBP", "JPY", "CAD", "AUD", "CHF", "CNY", "INR", "TRY"], id: \.self) { cur in
+                        Text(cur).tag(cur)
+                    }
+                }
+
+                HStack {
+                    Text("Default Hourly Rate")
+                    Spacer()
+                    TextField("0.00", text: Binding(
+                        get: { dataStore.preferences.defaultHourlyRate.map { String($0) } ?? "" },
+                        set: { newValue in
+                            let rate = Double(newValue.replacingOccurrences(of: ",", with: "."))
+                            dataStore.updatePreferences { $0.defaultHourlyRate = rate }
+                        }
+                    ))
+                    .textFieldStyle(.roundedBorder)
+                    .frame(width: 100)
+                    Text(dataStore.preferences.currency)
+                }
+            }
+
+            Section("Invoicing") {
+                HStack {
+                    Text("Invoice Number Prefix")
+                    Spacer()
+                    TextField("INV-", text: Binding(
+                        get: { dataStore.preferences.invoiceNumberPrefix },
+                        set: { newValue in
+                            dataStore.updatePreferences { $0.invoiceNumberPrefix = newValue }
+                        }
+                    ))
+                    .textFieldStyle(.roundedBorder)
+                    .frame(width: 100)
+                }
+                HStack {
+                    Text("Next Invoice Number")
+                    Spacer()
+                    Text("\(dataStore.preferences.invoiceNumberPrefix)\(String(format: "%04d", dataStore.preferences.nextInvoiceNumber))")
+                        .foregroundColor(.secondary)
+                }
+            }
+
+            Section("Work Schedule") {
+                let dayNames = ["Sun", "Mon", "Tue", "Wed", "Thu", "Fri", "Sat"]
+                HStack {
+                    Text("Working Days")
+                    Spacer()
+                    ForEach(1...7, id: \.self) { day in
+                        Toggle(dayNames[day - 1], isOn: Binding(
+                            get: { dataStore.preferences.workingDays.contains(day) },
+                            set: { isOn in
+                                dataStore.updatePreferences { prefs in
+                                    if isOn {
+                                        if !prefs.workingDays.contains(day) { prefs.workingDays.append(day) }
+                                    } else {
+                                        prefs.workingDays.removeAll { $0 == day }
+                                    }
+                                    prefs.workingDays.sort()
+                                }
+                            }
+                        ))
+                        .toggleStyle(.checkbox)
+                    }
+                }
+
+                HStack {
+                    Text("Expected Hours Per Day")
+                    Spacer()
+                    Slider(value: Binding(
+                        get: { dataStore.preferences.expectedHoursPerDay },
+                        set: { newValue in
+                            dataStore.updatePreferences { $0.expectedHoursPerDay = newValue }
+                        }
+                    ), in: 1...12, step: 0.5)
+                    .frame(width: 150)
+                    Text(String(format: "%.1fh", dataStore.preferences.expectedHoursPerDay))
+                        .monospacedDigit()
+                        .frame(width: 40)
+                }
             }
 
             Section("Data Portability") {

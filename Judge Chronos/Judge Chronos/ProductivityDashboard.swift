@@ -63,6 +63,9 @@ struct ProductivityDashboard: View {
                     // Peak Hours
                     PeakHoursSection(engine: engine, dataStore: dataStore)
                     
+                    // Working Time / Overtime
+                    OvertimeSection(dataStore: dataStore)
+
                     // Streaks
                     StreaksSection(engine: engine)
                 }
@@ -426,6 +429,80 @@ struct StreakCard: View {
                 .foregroundColor(.secondary)
         }
         .frame(maxWidth: .infinity, alignment: .leading)
+        .padding()
+        .background(Color(NSColor.controlBackgroundColor))
+        .cornerRadius(12)
+    }
+}
+
+// MARK: - Overtime Section
+struct OvertimeSection: View {
+    @ObservedObject var dataStore: LocalDataStore
+
+    private var weeklySummary: [WorkScheduleService.DailySummary] {
+        WorkScheduleService.shared.weeklySummary(for: Date(), dataStore: dataStore)
+    }
+
+    private var weeklyOvertimeTotal: TimeInterval {
+        WorkScheduleService.shared.weeklyOvertime(for: Date(), dataStore: dataStore)
+    }
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 12) {
+            HStack {
+                Text("Working Time")
+                    .font(.headline)
+                Spacer()
+                let otHours = weeklyOvertimeTotal / 3600
+                Text(String(format: "%+.1fh overtime", otHours))
+                    .font(.caption)
+                    .foregroundColor(otHours > 0 ? .orange : .green)
+                    .padding(.horizontal, 8)
+                    .padding(.vertical, 3)
+                    .background((otHours > 0 ? Color.orange : Color.green).opacity(0.1))
+                    .cornerRadius(6)
+            }
+
+            // Daily breakdown
+            HStack(spacing: 8) {
+                ForEach(weeklySummary, id: \.date) { day in
+                    VStack(spacing: 4) {
+                        let formatter = DateFormatter()
+                        Text({
+                            let f = DateFormatter()
+                            f.dateFormat = "EEE"
+                            return f.string(from: day.date)
+                        }())
+                            .font(.caption2)
+                            .foregroundColor(day.isWorkDay ? .primary : .secondary)
+
+                        ZStack(alignment: .bottom) {
+                            // Expected (background)
+                            RoundedRectangle(cornerRadius: 3)
+                                .fill(Color.gray.opacity(0.15))
+                                .frame(width: 24, height: CGFloat(day.expectedHours) * 8)
+
+                            // Actual
+                            RoundedRectangle(cornerRadius: 3)
+                                .fill(day.overtimeHours > 0 ? Color.orange : Color.green)
+                                .frame(width: 24, height: CGFloat(min(day.actualHours, 12)) * 8)
+                        }
+                        .frame(height: 64)
+
+                        Text(String(format: "%.1f", day.actualHours))
+                            .font(.system(size: 9))
+                            .foregroundColor(.secondary)
+
+                        if day.breakHours > 0 {
+                            Text(String(format: "%.0fm brk", day.breakHours * 60))
+                                .font(.system(size: 8))
+                                .foregroundColor(.blue)
+                        }
+                    }
+                    .frame(maxWidth: .infinity)
+                }
+            }
+        }
         .padding()
         .background(Color(NSColor.controlBackgroundColor))
         .cornerRadius(12)

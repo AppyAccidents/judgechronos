@@ -226,6 +226,9 @@ struct ProjectNodeView: View {
                     .help(rating.label)
             }
             
+            // Budget Indicator
+            BudgetIndicatorView(projectId: node.project.id)
+
             // Billable Indicator
             if node.project.isBillable {
                 Image(systemName: "dollarsign.circle")
@@ -328,10 +331,15 @@ struct ProjectEditorView: View {
     @State private var name = ""
     @State private var selectedColor: Color = .blue
     @State private var parentId: UUID?
+    @State private var clientId: UUID?
     @State private var productivityRating: ProductivityRating?
     @State private var hourlyRate: String = ""
     @State private var isBillable = false
     @State private var archived = false
+    @State private var timeBudgetHours: String = ""
+    @State private var moneyBudget: String = ""
+    @State private var showingAddActivity = false
+    @State private var editingActivity: Activity?
     
     @EnvironmentObject private var dataStore: LocalDataStore
     
@@ -359,6 +367,14 @@ struct ProjectEditorView: View {
                         .labelsHidden()
                 }
                 
+                // Client
+                Picker("Client", selection: $clientId) {
+                    Text("No Client").tag(UUID?.none)
+                    ForEach(dataStore.clients.filter { !$0.archived }) { client in
+                        Text(client.name).tag(Optional(client.id))
+                    }
+                }
+
                 // Parent Project
                 Picker("Parent Project", selection: $parentId) {
                     Text("None (Top Level)").tag(UUID?.none)
@@ -393,6 +409,58 @@ struct ProjectEditorView: View {
                     }
                 }
                 
+                // Budget
+                Section("Budget") {
+                    HStack {
+                        Text("Time Budget (hours)")
+                        TextField("0", text: $timeBudgetHours)
+                            .textFieldStyle(.roundedBorder)
+                            .frame(width: 80)
+                    }
+                    HStack {
+                        Text("Money Budget")
+                        TextField("0.00", text: $moneyBudget)
+                            .textFieldStyle(.roundedBorder)
+                            .frame(width: 100)
+                    }
+                }
+
+                // Activities
+                if isEditing {
+                    Section("Activities") {
+                        let projectActivities = dataStore.activities.filter { $0.projectId == project?.id }
+                        if projectActivities.isEmpty {
+                            Text("No activities yet")
+                                .foregroundColor(.secondary)
+                                .font(.caption)
+                        } else {
+                            ForEach(projectActivities) { activity in
+                                HStack {
+                                    Text(activity.name)
+                                    Spacer()
+                                    if activity.isBillable {
+                                        Image(systemName: "dollarsign.circle")
+                                            .font(.caption)
+                                            .foregroundColor(.green)
+                                    }
+                                    Button(action: { editingActivity = activity }) {
+                                        Image(systemName: "pencil")
+                                            .font(.caption)
+                                    }
+                                    .buttonStyle(.plain)
+                                    Button(action: { dataStore.deleteActivity(activity) }) {
+                                        Image(systemName: "trash")
+                                            .font(.caption)
+                                            .foregroundColor(.red)
+                                    }
+                                    .buttonStyle(.plain)
+                                }
+                            }
+                        }
+                        Button("Add Activity") { showingAddActivity = true }
+                    }
+                }
+
                 if isEditing {
                     Toggle("Archived", isOn: $archived)
                 }
@@ -413,29 +481,159 @@ struct ProjectEditorView: View {
                 name = project.name
                 selectedColor = Color(hex: project.colorHex) ?? .blue
                 parentId = project.parentId
+                clientId = project.clientId
                 productivityRating = project.productivityRating
                 hourlyRate = project.hourlyRate.map { String($0) } ?? ""
                 isBillable = project.isBillable
                 archived = project.archived
+                timeBudgetHours = project.timeBudgetSeconds.map { String($0 / 3600) } ?? ""
+                moneyBudget = project.moneyBudget.map { String($0) } ?? ""
+            }
+        }
+        .sheet(isPresented: $showingAddActivity) {
+            ActivityEditorView(activity: nil, projectId: project?.id) { newActivity in
+                dataStore.addActivity(newActivity)
+                showingAddActivity = false
+            }
+        }
+        .sheet(item: $editingActivity) { activity in
+            ActivityEditorView(activity: activity, projectId: project?.id) { updated in
+                dataStore.updateActivity(updated)
+                editingActivity = nil
             }
         }
     }
     
     private func save() {
         let rate = Double(hourlyRate.replacingOccurrences(of: ",", with: "."))
-        
+        let timeBudget = Double(timeBudgetHours.replacingOccurrences(of: ",", with: ".")).map { $0 * 3600 }
+        let budget = Double(moneyBudget.replacingOccurrences(of: ",", with: "."))
+
         let newProject = Project(
             id: project?.id ?? UUID(),
             name: name.trimmingCharacters(in: .whitespacesAndNewlines),
             colorHex: selectedColor.toHex(),
             parentId: parentId,
+            clientId: clientId,
             productivityRating: productivityRating,
             hourlyRate: rate,
             isBillable: isBillable,
             archived: archived,
-            createdAt: project?.createdAt ?? Date()
+            createdAt: project?.createdAt ?? Date(),
+            timeBudgetSeconds: timeBudget,
+            moneyBudget: budget
         )
-        
+
         onSave(newProject)
+    }
+}
+
+// MARK: - Budget Indicator
+struct BudgetIndicatorView: View {
+    let projectId: UUID
+    @EnvironmentObject private var dataStore: LocalDataStore
+
+    var body: some View {
+        let pct = BudgetService.shared.budgetPercentage(for: projectId, dataStore: dataStore)
+        if let timePct = pct.time {
+            BudgetMiniBar(percentage: timePct, label: "Time")
+        }
+        if let moneyPct = pct.money {
+            BudgetMiniBar(percentage: moneyPct, label: "Budget")
+        }
+    }
+}
+
+struct BudgetMiniBar: View {
+    let percentage: Double
+    let label: String
+
+    private var barColor: Color {
+        if percentage > 0.9 { return .red }
+        if percentage > 0.75 { return .yellow }
+        return .green
+    }
+
+    var body: some View {
+        HStack(spacing: 2) {
+            GeometryReader { geo in
+                ZStack(alignment: .leading) {
+                    Rectangle()
+                        .fill(Color.gray.opacity(0.2))
+                    Rectangle()
+                        .fill(barColor)
+                        .frame(width: geo.size.width * min(1, percentage))
+                }
+                .cornerRadius(2)
+            }
+            .frame(width: 30, height: 6)
+            .help("\(label): \(Int(percentage * 100))%")
+        }
+    }
+}
+
+// MARK: - Activity Editor
+struct ActivityEditorView: View {
+    let activity: Activity?
+    let projectId: UUID?
+    let onSave: (Activity) -> Void
+
+    @Environment(\.dismiss) private var dismiss
+
+    @State private var name = ""
+    @State private var isBillable = true
+    @State private var hourlyRate = ""
+    @State private var colorHex = ""
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 20) {
+            Text(activity != nil ? "Edit Activity" : "New Activity")
+                .font(.title2)
+
+            Form {
+                TextField("Activity Name", text: $name)
+                    .textFieldStyle(.roundedBorder)
+                Toggle("Billable", isOn: $isBillable)
+                if isBillable {
+                    HStack {
+                        Text("Hourly Rate Override")
+                        TextField("Use project rate", text: $hourlyRate)
+                            .textFieldStyle(.roundedBorder)
+                            .frame(width: 100)
+                    }
+                }
+            }
+
+            HStack {
+                Button("Cancel") { dismiss() }
+                Spacer()
+                Button("Save") {
+                    let rate = Double(hourlyRate.replacingOccurrences(of: ",", with: "."))
+                    let newActivity = Activity(
+                        id: activity?.id ?? UUID(),
+                        name: name.trimmingCharacters(in: .whitespacesAndNewlines),
+                        projectId: projectId,
+                        colorHex: colorHex.isEmpty ? nil : colorHex,
+                        isBillable: isBillable,
+                        hourlyRate: rate,
+                        archived: false,
+                        createdAt: activity?.createdAt ?? Date()
+                    )
+                    onSave(newActivity)
+                }
+                .keyboardShortcut(.defaultAction)
+                .disabled(name.trimmingCharacters(in: .whitespaces).isEmpty)
+            }
+        }
+        .padding()
+        .frame(width: 400)
+        .onAppear {
+            if let act = activity {
+                name = act.name
+                isBillable = act.isBillable
+                hourlyRate = act.hourlyRate.map { String($0) } ?? ""
+                colorHex = act.colorHex ?? ""
+            }
+        }
     }
 }

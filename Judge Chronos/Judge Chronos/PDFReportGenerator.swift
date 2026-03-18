@@ -154,21 +154,22 @@ final class PDFReportGenerator {
         let tax = subtotal * (config.taxRate ?? 0) / 100
         let grandTotal = subtotal + tax
         
-        drawText("Subtotal:", at: CGPoint(x: pageRect.width - 250, y: yPosition), 
+        let currencySymbol = dataStore.preferences.currency
+        drawText("Subtotal:", at: CGPoint(x: pageRect.width - 250, y: yPosition),
                 font: .boldSystemFont(ofSize: 11), on: page)
-        drawText(String(format: "$%.2f", subtotal), at: CGPoint(x: pageRect.width - 100, y: yPosition), 
+        drawText(String(format: "%@ %.2f", currencySymbol, subtotal), at: CGPoint(x: pageRect.width - 100, y: yPosition),
                 font: .systemFont(ofSize: 11), on: page)
-        
+
         yPosition -= 15
-        drawText("Tax (\(config.taxRate ?? 0)%):", at: CGPoint(x: pageRect.width - 250, y: yPosition), 
+        drawText("Tax (\(config.taxRate ?? 0)%):", at: CGPoint(x: pageRect.width - 250, y: yPosition),
                 font: .boldSystemFont(ofSize: 11), on: page)
-        drawText(String(format: "$%.2f", tax), at: CGPoint(x: pageRect.width - 100, y: yPosition), 
+        drawText(String(format: "%@ %.2f", currencySymbol, tax), at: CGPoint(x: pageRect.width - 100, y: yPosition),
                 font: .systemFont(ofSize: 11), on: page)
-        
+
         yPosition -= 20
-        drawText("Total:", at: CGPoint(x: pageRect.width - 250, y: yPosition), 
+        drawText("Total:", at: CGPoint(x: pageRect.width - 250, y: yPosition),
                 font: .boldSystemFont(ofSize: 14), on: page)
-        drawText(String(format: "$%.2f", grandTotal), at: CGPoint(x: pageRect.width - 100, y: yPosition), 
+        drawText(String(format: "%@ %.2f", currencySymbol, grandTotal), at: CGPoint(x: pageRect.width - 100, y: yPosition),
                 font: .boldSystemFont(ofSize: 14), on: page)
         
         // Notes
@@ -255,38 +256,291 @@ final class PDFReportGenerator {
     ) -> PDFDocument? {
         let pdfDocument = PDFDocument()
         let pageRect = CGRect(x: 0, y: 0, width: 612, height: 792)
-        
-        guard let page = PDFPage(image: NSImage(size: pageRect.size)) else { return nil }
-        pdfDocument.insert(page, at: 0)
-        
-        let sessions = getSessions(for: config, dataStore: dataStore)
+
+        guard var currentPage = PDFPage(image: NSImage(size: pageRect.size)) else { return nil }
+        pdfDocument.insert(currentPage, at: 0)
+
+        let sessions = getSessions(for: config, dataStore: dataStore).sorted { $0.startTime < $1.startTime }
         var yPosition = pageRect.height - 50
-        
-        drawText("DETAILED ACTIVITY LOG", at: CGPoint(x: 50, y: yPosition), 
-                font: .boldSystemFont(ofSize: 24), on: page)
-        
-        // Detailed list with all metadata
-        // Implementation similar to timesheet but with more detail
-        
+
+        drawText("DETAILED ACTIVITY LOG", at: CGPoint(x: 50, y: yPosition),
+                font: .boldSystemFont(ofSize: 24), on: currentPage)
+
+        yPosition -= 30
+        let dateFormatter = DateFormatter()
+        dateFormatter.dateStyle = .medium
+        drawText("Period: \(dateFormatter.string(from: config.startDate)) - \(dateFormatter.string(from: config.endDate))",
+                at: CGPoint(x: 50, y: yPosition), font: .systemFont(ofSize: 12), on: currentPage)
+        drawText("Total: \(sessions.count) sessions, \(formatDuration(sessions.reduce(0) { $0 + $1.duration }))",
+                at: CGPoint(x: 350, y: yPosition), font: .systemFont(ofSize: 10), on: currentPage)
+
+        yPosition -= 40
+
+        // Headers
+        let headers = ["Date", "Time", "App", "Window Title", "Project", "Category", "Duration"]
+        let xPos: [CGFloat] = [50, 100, 180, 280, 380, 440, 520]
+
+        func drawHeaders(on page: PDFPage, at y: inout CGFloat) {
+            for (i, header) in headers.enumerated() {
+                drawText(header, at: CGPoint(x: xPos[i], y: y), font: .boldSystemFont(ofSize: 9), on: page)
+            }
+            y -= 5
+            drawSeparator(at: y, pageWidth: pageRect.width, on: page)
+            y -= 12
+        }
+
+        drawHeaders(on: currentPage, at: &yPosition)
+
+        let timeFormatter = DateFormatter()
+        timeFormatter.timeStyle = .short
+        let shortDateFormatter = DateFormatter()
+        shortDateFormatter.dateFormat = "MM/dd"
+
+        for session in sessions {
+            if yPosition < 80 {
+                guard let newPage = PDFPage(image: NSImage(size: pageRect.size)) else { continue }
+                pdfDocument.insert(newPage, at: pdfDocument.pageCount)
+                currentPage = newPage
+                yPosition = pageRect.height - 50
+                drawHeaders(on: currentPage, at: &yPosition)
+            }
+
+            let projectName = dataStore.projectName(for: session.projectId)
+            let categoryName = dataStore.categoryName(for: session.categoryId)
+            let windowTitle = session.lastWindowTitle ?? ""
+
+            let values = [
+                shortDateFormatter.string(from: session.startTime),
+                "\(timeFormatter.string(from: session.startTime))-\(timeFormatter.string(from: session.endTime))",
+                String(session.sourceApp.prefix(15)),
+                String(windowTitle.prefix(15)),
+                String(projectName.prefix(10)),
+                String(categoryName.prefix(10)),
+                formatDuration(session.duration)
+            ]
+
+            for (i, value) in values.enumerated() {
+                drawText(value, at: CGPoint(x: xPos[i], y: yPosition), font: .systemFont(ofSize: 8), on: currentPage)
+            }
+
+            // Note on second line if present
+            if let note = session.note, !note.isEmpty {
+                yPosition -= 10
+                drawText("  Note: \(String(note.prefix(80)))", at: CGPoint(x: 50, y: yPosition),
+                        font: .systemFont(ofSize: 7), on: currentPage)
+            }
+
+            yPosition -= 14
+        }
+
         return pdfDocument
     }
-    
+
     // MARK: - Project Summary Template
     private func generateProjectSummary(
         config: ReportConfiguration,
         dataStore: LocalDataStore
     ) -> PDFDocument? {
-        // Implementation for project summary report
-        return nil
+        let pdfDocument = PDFDocument()
+        let pageRect = CGRect(x: 0, y: 0, width: 612, height: 792)
+
+        guard var currentPage = PDFPage(image: NSImage(size: pageRect.size)) else { return nil }
+        pdfDocument.insert(currentPage, at: 0)
+
+        let sessions = getSessions(for: config, dataStore: dataStore)
+        var yPosition = pageRect.height - 50
+
+        drawText("PROJECT SUMMARY", at: CGPoint(x: 50, y: yPosition),
+                font: .boldSystemFont(ofSize: 24), on: currentPage)
+
+        yPosition -= 30
+        let dateFormatter = DateFormatter()
+        dateFormatter.dateStyle = .medium
+        drawText("Period: \(dateFormatter.string(from: config.startDate)) - \(dateFormatter.string(from: config.endDate))",
+                at: CGPoint(x: 50, y: yPosition), font: .systemFont(ofSize: 12), on: currentPage)
+
+        yPosition -= 50
+
+        // Group by project
+        let grouped = Dictionary(grouping: sessions) { $0.projectId }
+        let sortedGroups = grouped.sorted { a, b in
+            let aTime = a.value.reduce(0) { $0 + $1.duration }
+            let bTime = b.value.reduce(0) { $0 + $1.duration }
+            return aTime > bTime
+        }
+
+        for (projectId, projectSessions) in sortedGroups {
+            if yPosition < 120 {
+                guard let newPage = PDFPage(image: NSImage(size: pageRect.size)) else { continue }
+                pdfDocument.insert(newPage, at: pdfDocument.pageCount)
+                currentPage = newPage
+                yPosition = pageRect.height - 50
+            }
+
+            let projectName = dataStore.projectName(for: projectId)
+            let totalTime = projectSessions.reduce(0) { $0 + $1.duration }
+            let totalHours = totalTime / 3600
+            let billableSessions = projectSessions.filter { s in
+                guard let pid = s.projectId else { return false }
+                return dataStore.projects.first(where: { $0.id == pid })?.isBillable ?? false
+            }
+            let billableHours = billableSessions.reduce(0) { $0 + $1.duration } / 3600
+
+            // Client info
+            if let pid = projectId,
+               let project = dataStore.projects.first(where: { $0.id == pid }),
+               let clientId = project.clientId {
+                let clientName = dataStore.clientName(for: clientId)
+                drawText("Client: \(clientName)", at: CGPoint(x: 50, y: yPosition),
+                        font: .systemFont(ofSize: 9), on: currentPage)
+                yPosition -= 14
+            }
+
+            drawText(projectName, at: CGPoint(x: 50, y: yPosition),
+                    font: .boldSystemFont(ofSize: 13), on: currentPage)
+            yPosition -= 18
+
+            drawText("Total: \(formatDuration(totalTime)) (\(String(format: "%.1f", totalHours))h)",
+                    at: CGPoint(x: 70, y: yPosition), font: .systemFont(ofSize: 10), on: currentPage)
+            drawText("Billable: \(String(format: "%.1f", billableHours))h",
+                    at: CGPoint(x: 280, y: yPosition), font: .systemFont(ofSize: 10), on: currentPage)
+
+            let rate = config.hourlyRate ?? dataStore.projects.first(where: { $0.id == projectId })?.hourlyRate ?? 0
+            if rate > 0 {
+                let earned = billableHours * rate
+                drawText("Earned: \(String(format: "%.2f", earned))",
+                        at: CGPoint(x: 420, y: yPosition), font: .systemFont(ofSize: 10), on: currentPage)
+            }
+            yPosition -= 16
+
+            // Budget usage bar
+            if let pid = projectId {
+                let pct = BudgetService.shared.budgetPercentage(for: pid, dataStore: dataStore)
+                if let timePct = pct.time {
+                    drawText("Budget: \(Int(timePct * 100))%", at: CGPoint(x: 70, y: yPosition),
+                            font: .systemFont(ofSize: 9), on: currentPage)
+                    yPosition -= 14
+                }
+            }
+
+            // Activity breakdown
+            let activityGrouped = Dictionary(grouping: projectSessions) { $0.activityId }
+            for (activityId, actSessions) in activityGrouped {
+                let actName = dataStore.activityName(for: activityId)
+                let actTime = actSessions.reduce(0) { $0 + $1.duration }
+                drawText("  \(actName): \(formatDuration(actTime))", at: CGPoint(x: 90, y: yPosition),
+                        font: .systemFont(ofSize: 9), on: currentPage)
+                yPosition -= 12
+            }
+
+            yPosition -= 10
+            drawSeparator(at: yPosition, pageWidth: pageRect.width, on: currentPage)
+            yPosition -= 20
+        }
+
+        return pdfDocument
     }
-    
+
     // MARK: - Productivity Report Template
     private func generateProductivityReport(
         config: ReportConfiguration,
         dataStore: LocalDataStore
     ) -> PDFDocument? {
-        // Implementation for productivity analytics report
-        return nil
+        let pdfDocument = PDFDocument()
+        let pageRect = CGRect(x: 0, y: 0, width: 612, height: 792)
+
+        guard let page = PDFPage(image: NSImage(size: pageRect.size)) else { return nil }
+        pdfDocument.insert(page, at: 0)
+
+        let sessions = getSessions(for: config, dataStore: dataStore)
+        var yPosition = pageRect.height - 50
+
+        drawText("PRODUCTIVITY REPORT", at: CGPoint(x: 50, y: yPosition),
+                font: .boldSystemFont(ofSize: 24), on: page)
+
+        yPosition -= 30
+        let dateFormatter = DateFormatter()
+        dateFormatter.dateStyle = .medium
+        drawText("Period: \(dateFormatter.string(from: config.startDate)) - \(dateFormatter.string(from: config.endDate))",
+                at: CGPoint(x: 50, y: yPosition), font: .systemFont(ofSize: 12), on: page)
+
+        yPosition -= 50
+
+        // Daily productivity scores
+        drawText("Daily Productivity Scores", at: CGPoint(x: 50, y: yPosition),
+                font: .boldSystemFont(ofSize: 14), on: page)
+        yPosition -= 20
+
+        let calendar = Calendar.current
+        let engine = ProductivityEngine.shared
+        var currentDate = config.startDate
+        while currentDate <= config.endDate {
+            if yPosition < 80 { break }
+            let score = engine.calculateDailyScore(for: currentDate, dataStore: dataStore)
+            let dayStr = dateFormatter.string(from: currentDate)
+            drawText(dayStr, at: CGPoint(x: 70, y: yPosition), font: .systemFont(ofSize: 10), on: page)
+            drawText(String(format: "%.2f", score.overallScore), at: CGPoint(x: 200, y: yPosition),
+                    font: .systemFont(ofSize: 10), on: page)
+            drawText("Prod: \(String(format: "%.1f", score.productiveHours))h  Dist: \(String(format: "%.1f", score.distractingHours))h",
+                    at: CGPoint(x: 260, y: yPosition), font: .systemFont(ofSize: 9), on: page)
+            yPosition -= 14
+            currentDate = calendar.date(byAdding: .day, value: 1, to: currentDate) ?? currentDate.addingTimeInterval(86400)
+        }
+
+        yPosition -= 20
+
+        // Top apps
+        drawText("Top Productive Apps", at: CGPoint(x: 50, y: yPosition),
+                font: .boldSystemFont(ofSize: 14), on: page)
+        yPosition -= 18
+
+        let appGroups = Dictionary(grouping: sessions.filter { !$0.isIdle }) { $0.sourceApp }
+        let sortedApps = appGroups
+            .map { (name: $0.key, time: $0.value.reduce(0) { $0 + $1.duration }) }
+            .sorted { $0.time > $1.time }
+
+        let productiveApps = sortedApps.filter { app in
+            let project = sessions.first(where: { $0.sourceApp == app.name })?.projectId
+            let rating = project.flatMap { pid in dataStore.projects.first(where: { $0.id == pid }) }?.productivityRating
+            return (rating?.rawValue ?? 0) >= 0
+        }
+
+        for app in productiveApps.prefix(5) {
+            drawText("\(app.name): \(formatDuration(app.time))", at: CGPoint(x: 70, y: yPosition),
+                    font: .systemFont(ofSize: 10), on: page)
+            yPosition -= 14
+        }
+
+        yPosition -= 10
+        drawText("Top Distracting Apps", at: CGPoint(x: 50, y: yPosition),
+                font: .boldSystemFont(ofSize: 14), on: page)
+        yPosition -= 18
+
+        let distractingApps = sortedApps.filter { app in
+            let project = sessions.first(where: { $0.sourceApp == app.name })?.projectId
+            let rating = project.flatMap { pid in dataStore.projects.first(where: { $0.id == pid }) }?.productivityRating
+            return (rating?.rawValue ?? 0) < 0
+        }
+
+        for app in distractingApps.prefix(5) {
+            drawText("\(app.name): \(formatDuration(app.time))", at: CGPoint(x: 70, y: yPosition),
+                    font: .systemFont(ofSize: 10), on: page)
+            yPosition -= 14
+        }
+
+        yPosition -= 20
+
+        // Streak info
+        drawText("Streaks", at: CGPoint(x: 50, y: yPosition),
+                font: .boldSystemFont(ofSize: 14), on: page)
+        yPosition -= 18
+        drawText("Current streak: \(engine.currentStreak) days", at: CGPoint(x: 70, y: yPosition),
+                font: .systemFont(ofSize: 10), on: page)
+        yPosition -= 14
+        drawText("Best streak: \(engine.bestStreak) days", at: CGPoint(x: 70, y: yPosition),
+                font: .systemFont(ofSize: 10), on: page)
+
+        return pdfDocument
     }
     
     // MARK: - Helper Methods
